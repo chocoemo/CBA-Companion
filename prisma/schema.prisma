@@ -115,6 +115,7 @@ model Player {
   teamId            Int?
   team              Team?    @relation(fields: [teamId], references: [id])
   organizationId    Int?
+  leagueId          Int?     // links to League.id — drives the International tab split
   level             MinorLevel?
   pos               String?  // decoded from OOTP Pos code
   role              String?  // decoded from OOTP Role code (SP/RP/CL) for pitchers
@@ -217,16 +218,34 @@ model Pick {
 }
 
 model DraftResult {
-  id          Int      @id @default(autoincrement())
-  pickId      Int      @unique
-  pick        Pick     @relation(fields: [pickId], references: [id])
-  playerId    Int      @unique
-  player      Player   @relation(fields: [playerId], references: [id])
-  teamId      Int
-  team        Team     @relation(fields: [teamId], references: [id])
-  year        Int
-  round       Int
-  overallSlot Int
+  id            Int         @id @default(autoincrement())
+  pickId        Int         @unique
+  pick          Pick        @relation(fields: [pickId], references: [id])
+  playerId      Int         @unique
+  player        Player      @relation(fields: [playerId], references: [id])
+  teamId        Int
+  team          Team        @relation(fields: [teamId], references: [id])
+  year          Int
+  round         Int
+  overallSlot   Int
+  intendedLevel MinorLevel? // where YOU plan to assign this pick once eligible — set manually, not synced
+}
+
+// Singleton settings row (id is always 1) — fit-score tool weights and
+// roster min/max by position group. Read by the Draft tab and (later)
+// roster-compliance checks.
+model Settings {
+  id                Int   @id @default(1)
+  fitWeights        Json  // { contact: 1, power: 1, eye: 0.5, ... } — see lib/fitScore.ts for the default set
+  rosterMinC        Int?
+  rosterMaxC        Int?
+  rosterMinIF       Int?
+  rosterMaxIF       Int?
+  rosterMinOF       Int?
+  rosterMaxOF       Int?
+  rosterMinP        Int?
+  rosterMaxP        Int?
+  updatedAt         DateTime @updatedAt
 }
 
 model Trade {
@@ -292,6 +311,21 @@ model StandingsSnapshot {
 
   @@index([teamId, asOf])
 }
+
+// Every league in the save, from /lgdata — the CBA's own PL/SL/BL (+ their
+// affiliate levels) AND any unaffiliated foreign leagues (an NPB/KBO-style
+// league with no tie to a CBA org). isCbaAffiliated starts false for
+// anything new and gets confirmed manually via Settings once real league
+// IDs are visible, rather than guessed automatically and possibly wrong.
+model League {
+  id               Int      @id // StatsPlus league_id
+  name             String
+  isCbaAffiliated  Boolean  @default(false)
+  tier             LeagueTier? // set for PL/SL/BL only
+  raw              Json?
+  updatedAt        DateTime @updatedAt
+}
+
 
 // Editable tooltip text for every column, including columns that show up
 // for the first time from a new CSV/JSON import.

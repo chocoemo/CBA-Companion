@@ -7,13 +7,36 @@ import { prisma } from "@/lib/prisma";
 // run yet), and never re-queries the database on real requests afterward.
 export const dynamic = "force-dynamic";
 
-// GET /api/players
-// Returns every non-retired player with their MOST RECENT scout snapshot
-// and most recent OSA snapshot side by side, so the frontend can default to
-// scout and flip to OSA without a second round trip.
-export async function GET() {
+// GET /api/players?pool=draft|fa|international|all (default: all)
+// - draft: players in the most recent /draftpool snapshot (the live draft
+//   class). Rough for now until draft-eligibility flagging is refined.
+// - fa: no current team (free agents).
+// - international: player's League is confirmed NOT CBA-affiliated (see
+//   the League table / Settings — leagues default to unconfirmed until you
+//   classify them, so this only includes ones explicitly marked foreign).
+// - all: everyone, no pool filter (used by tabs that want the whole DB).
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const pool = searchParams.get("pool") ?? "all";
+
+  let draftPoolIds: number[] | null = null;
+  let foreignLeagueIds: number[] | null = null;
+
+  if (pool === "draft") {
+    const latestSnapshot = await prisma.draftPoolSnapshot.findFirst({ orderBy: { asOf: "desc" } });
+    draftPoolIds = (latestSnapshot?.remainingPlayerIds as number[] | undefined) ?? [];
+  } else if (pool === "international") {
+    const foreignLeagues = await prisma.league.findMany({ where: { isCbaAffiliated: false } });
+    foreignLeagueIds = foreignLeagues.map((l) => l.id);
+  }
+
   const players = await prisma.player.findMany({
-    where: { retired: false },
+    where: {
+      retired: false,
+      ...(pool === "fa" ? { teamId: null } : {}),
+      ...(foreignLeagueIds ? { leagueId: { in: foreignLeagueIds } } : {}),
+      ...(draftPoolIds ? { id: { in: draftPoolIds } } : {}),
+    },
     include: {
       team: { select: { id: true, name: true, nickname: true, abbr: true } },
       ratings: {
@@ -37,6 +60,7 @@ export async function GET() {
       age: p.age,
       bats: p.bats,
       throws: p.throws,
+      leagueId: p.leagueId,
       scout: scout ? { overall: scout.overall, potential: scout.potential, tools: scout.tools, capturedAt: scout.capturedAt } : null,
       osa: osa ? { overall: osa.overall, potential: osa.potential, tools: osa.tools, capturedAt: osa.capturedAt } : null,
     };

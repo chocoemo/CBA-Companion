@@ -1,17 +1,25 @@
-import Link from "next/link";
-import BigBoardPage from "./big-board/page";
+"use client";
+import { useState } from "react";
+import DraftPage from "./draft/page";
+import LeaguePage from "./league/page";
+import InternationalPage from "./international/page";
+import TeamPage from "./team/page";
+import SettingsPage from "./settings/page";
 
-const PHASE_1_TABS = [
-  { href: "/", label: "Big Board", live: true },
-  { label: "Draft Log", live: false },
-  { label: "Org Depth", live: false },
-  { label: "Trade Calc", live: false },
-  { label: "Pick Value Chart", live: false },
-  { label: "GM Tendencies", live: false },
-  { label: "Settings", live: false },
-];
+const MAIN_TABS = [
+  { key: "draft", label: "Draft", live: true },
+  { key: "league", label: "League", live: true },
+  { key: "international", label: "International", live: true },
+  { key: "team", label: "Team", live: true },
+  { key: "settings", label: "Settings", live: true },
+  { key: "trade", label: "Trade Calc", live: false },
+  { key: "picks", label: "Pick Value Chart", live: false },
+  { key: "gm", label: "GM Tendencies", live: false },
+] as const;
 
 export default function Home() {
+  const [tab, setTab] = useState<(typeof MAIN_TABS)[number]["key"]>("draft");
+
   return (
     <>
       <header className="app-header">
@@ -21,20 +29,24 @@ export default function Home() {
         </div>
       </header>
       <nav className="tabs">
-        {PHASE_1_TABS.map((t) =>
+        {MAIN_TABS.map((t) =>
           t.live ? (
-            <Link key={t.label} href={t.href!}>
-              <button className="active">{t.label}</button>
-            </Link>
+            <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
+              {t.label}
+            </button>
           ) : (
-            <button key={t.label} disabled title="Coming in a later phase" style={{ opacity: 0.4, cursor: "not-allowed" }}>
+            <button key={t.key} disabled title="Coming in a later phase" style={{ opacity: 0.4, cursor: "not-allowed" }}>
               {t.label}
             </button>
           )
         )}
       </nav>
       <main>
-        <BigBoardPage />
+        {tab === "draft" && <DraftPage />}
+        {tab === "league" && <LeaguePage />}
+        {tab === "international" && <InternationalPage />}
+        {tab === "team" && <TeamPage />}
+        {tab === "settings" && <SettingsPage />}
       </main>
     </>
   );

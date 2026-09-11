@@ -21,6 +21,7 @@ export async function POST(req: Request) {
     for (const row of rows) {
       const teamId = Number(row["Team ID"] ?? 0);
       const orgId = Number(row["Organization ID"] ?? 0);
+      const leagueId = row["League ID"] ? Number(row["League ID"]) : null;
       const level = MINOR_LEVEL_FROM_OOTP[Number(row["Level"] ?? 0)] as MinorLevel | undefined;
 
       await prisma.player.upsert({
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
           lastName: row["Last Name"],
           teamId: teamId > 0 ? teamId : null,
           organizationId: orgId > 0 ? orgId : null,
+          leagueId,
           level: level ?? null,
           pos: POSITION_IDS[Number(row["Pos"])] ?? row["Pos"],
           role: ROLE_IDS[Number(row["Role"])] ?? null,
@@ -51,6 +53,7 @@ export async function POST(req: Request) {
           lastName: row["Last Name"],
           teamId: teamId > 0 ? teamId : null,
           organizationId: orgId > 0 ? orgId : null,
+          leagueId,
           level: level ?? null,
           pos: POSITION_IDS[Number(row["Pos"])] ?? row["Pos"],
           role: ROLE_IDS[Number(row["Role"])] ?? null,
