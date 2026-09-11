@@ -1,0 +1,335 @@
+// CBA Companion — core data model
+// Encodes StatsPlus API shapes + CBA Constitution rules (contracts, service time, draft, picks)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeagueTier {
+  PREMIER // Premier League (PL)
+  SILVER  // Silver League (SL)
+  BRONZE  // Bronze League (BL)
+}
+
+// OOTP Level IDs collapsed to the CBA's actual affiliate names.
+// All three LeagueTier values map to OOTP "ml" (level 1) in the raw data —
+// CBA just runs 3 major leagues under promotion/relegation.
+enum MinorLevel {
+  MAJORS     // ML (PL/SL/BL — see LeagueTier on Team)
+  RESERVES   // RES  ~ AAA
+  DEV_A      // DEV-A ~ AA
+  DEV_B      // DEV-B ~ A
+  YOUTH_ACADEMY // YA ~ Rookie, currently capped at age 19 per constitution 2.4.1 (subject to change)
+}
+
+enum RatingSource {
+  SCOUT // your own team's scouted grades — ALWAYS the default view
+  OSA
+}
+
+enum AssetType {
+  PLAYER
+  PICK
+  CASH
+}
+
+enum TradeSide {
+  A
+  B
+}
+
+model Team {
+  id                Int         @id // StatsPlus team_id
+  name              String
+  nickname          String
+  abbr              String
+  tier              LeagueTier?
+  divisionId        Int?
+  parentTeamId      Int?
+  // Branding — only Calgary is pre-seeded; every team can carry its own theme.
+  colorPrimary      String?
+  colorSecondary    String?
+  colorTertiary     String?
+  colorAccent       String?
+  isDefaultControlling Boolean  @default(false)
+
+  players           Player[]
+  contracts         Contract[]
+  picksOriginal     Pick[]      @relation("OriginalTeam")
+  picksOwned        Pick[]      @relation("CurrentOwner")
+  draftResults      DraftResult[]
+  gmStints          GMStint[]
+  tradesAsA         Trade[]     @relation("TeamA")
+  tradesAsB         Trade[]     @relation("TeamB")
+  standingsSnapshots StandingsSnapshot[]
+}
+
+model GM {
+  id            Int       @id @default(autoincrement())
+  displayName   String
+  active        Boolean   @default(true)
+  stints        GMStint[]
+  tendencyProfiles GMTendencyProfile[]
+  tradesAsA     Trade[]   @relation("GMA")
+  tradesAsB     Trade[]   @relation("GMB")
+}
+
+// Tracks which team a GM controlled and when — lets tendencies follow the
+// person, not the seat, and lets you "reset" a team's pattern on a GM change
+// without losing the old GM's history.
+model GMStint {
+  id        Int       @id @default(autoincrement())
+  gmId      Int
+  gm        GM        @relation(fields: [gmId], references: [id])
+  teamId    Int
+  team      Team      @relation(fields: [teamId], references: [id])
+  startDate DateTime
+  endDate   DateTime?
+
+  @@index([teamId])
+}
+
+// A computed snapshot of "what does this GM seem to like" — regenerated
+// periodically from their trade + draft history. Archived (not deleted) on
+// reset so old-GM patterns stay queryable historically.
+model GMTendencyProfile {
+  id           Int      @id @default(autoincrement())
+  gmId         Int
+  gm           GM       @relation(fields: [gmId], references: [id])
+  generatedAt  DateTime @default(now())
+  archived     Boolean  @default(false)
+  archivedAt   DateTime?
+  summary      Json     // free-form: tool preferences, position tendencies, buy/sell patterns, pick-vs-player lean, etc.
+  notes        String?
+}
+
+model Player {
+  id                Int      @id // StatsPlus player_id — the join key for every import
+  firstName         String
+  lastName          String
+  teamId            Int?
+  team              Team?    @relation(fields: [teamId], references: [id])
+  organizationId    Int?
+  level             MinorLevel?
+  pos               String?  // decoded from OOTP Pos code
+  role              String?  // decoded from OOTP Role code (SP/RP/CL) for pitchers
+  age               Int?
+  bats              String?  // R / L / S
+  throws            String?  // R / L
+  retired           Boolean  @default(false)
+  draftYear         Int?
+  draftRound        Int?
+  draftOverallPick  Int?
+  mlbServiceYears   Int?
+  mlbServiceDays    Int?
+  isOn40Man         Boolean  @default(false)
+  isActive          Boolean  @default(false)
+  rawImport         Json?    // full raw /players row, for fields we haven't modeled explicitly yet
+  updatedAt         DateTime @updatedAt
+
+  ratings           RatingSnapshot[]
+  contracts         Contract[]
+  draftResult       DraftResult?
+  tradeAssets       TradeAsset[]
+  prospectRankings  ProspectRanking[]
+
+  @@index([teamId])
+  @@index([lastName])
+}
+
+// One row per (player, source, capture date). Keeping full history is what
+// lets you see a prospect's grades change over time, and lets "scout vs OSA"
+// be a toggle rather than an overwrite. Tool grades live in a JSON blob
+// because hitters/pitchers carry different tool sets and the league may add
+// custom scouted categories (e.g. personality/makeup) later — those become
+// new keys here, and get a TooltipDef entry rather than a schema change.
+model RatingSnapshot {
+  id          Int          @id @default(autoincrement())
+  playerId    Int
+  player      Player       @relation(fields: [playerId], references: [id])
+  source      RatingSource
+  capturedAt  DateTime     @default(now())
+  overall     Int?         // 20-80 scale; can exceed 80 per league convention
+  potential   Int?
+  tools       Json         // e.g. { "contact":55, "power":60, "eye":50, "babip":52, "stuff":0, "control":0, ... }
+  raw         Json?        // full raw ratings dump row
+
+  @@index([playerId, source, capturedAt])
+}
+
+// Organizational / league-wide prospect list snapshots, so graduations
+// mid-season and rank movement over time are trackable, not just a live number.
+model ProspectRanking {
+  id          Int      @id @default(autoincrement())
+  playerId    Int
+  player      Player   @relation(fields: [playerId], references: [id])
+  scope       String   // "ORG:<teamId>" | "LEAGUE:PL" | "LEAGUE:SL" | "LEAGUE:BL" | "LEAGUE:ALL"
+  rank        Int
+  asOf        DateTime @default(now())
+  source      RatingSource @default(SCOUT)
+
+  @@index([scope, asOf])
+}
+
+model Contract {
+  id                  Int      @id @default(autoincrement())
+  playerId            Int
+  player              Player   @relation(fields: [playerId], references: [id])
+  teamId              Int
+  team                Team     @relation(fields: [teamId], references: [id])
+  seasonYear          Int
+  years               Int
+  currentYear         Int
+  salaryByYear        Json     // salary0..salary14 from S+, indexed by contract year
+  isPreArbMinimum     Boolean  @default(false) // house rule: <6 yrs service defaults to $500K unless extended
+  extensionEligible   Boolean  @default(false) // true once player has 3+ yrs ML service (constitution 2.7.1/2.7.3)
+  hasBeenExtended     Boolean  @default(false) // extensions only allowed once per constitution
+  rawImport           Json?
+
+  @@index([playerId])
+  @@index([teamId])
+}
+
+// A single draft pick, one row per (year, round, original team). Ownership
+// moves via TradeAsset rows referencing this pick — pickValue* fields are
+// snapshotted from the live curve at read time, not stored redundantly here.
+model Pick {
+  id                Int      @id @default(autoincrement())
+  draftYear         Int
+  round             Int
+  overallSlot       Int?     // filled in once draft order is set for that year
+  originalTeamId    Int
+  originalTeam      Team     @relation("OriginalTeam", fields: [originalTeamId], references: [id])
+  currentOwnerTeamId Int
+  currentOwnerTeam  Team     @relation("CurrentOwner", fields: [currentOwnerTeamId], references: [id])
+  tradedTwice       Boolean  @default(false) // flags the $2M fine scenario (constitution 2.8.3)
+
+  tradeAssets       TradeAsset[]
+  draftResult       DraftResult?
+
+  @@unique([draftYear, round, originalTeamId])
+  @@index([currentOwnerTeamId])
+}
+
+model DraftResult {
+  id          Int      @id @default(autoincrement())
+  pickId      Int      @unique
+  pick        Pick     @relation(fields: [pickId], references: [id])
+  playerId    Int      @unique
+  player      Player   @relation(fields: [playerId], references: [id])
+  teamId      Int
+  team        Team     @relation(fields: [teamId], references: [id])
+  year        Int
+  round       Int
+  overallSlot Int
+}
+
+model Trade {
+  id          Int          @id @default(autoincrement())
+  date        DateTime
+  teamAId     Int
+  teamA       Team         @relation("TeamA", fields: [teamAId], references: [id])
+  teamBId     Int
+  teamB       Team         @relation("TeamB", fields: [teamBId], references: [id])
+  gmAId       Int?
+  gmA         GM?          @relation("GMA", fields: [gmAId], references: [id])
+  gmBId       Int?
+  gmB         GM?          @relation("GMB", fields: [gmBId], references: [id])
+  isLoan      Boolean      @default(false) // constitution 2.6.5 — loans follow trade rules but expire
+  loanReturnsAt DateTime?
+  notes       String?
+  assets      TradeAsset[]
+}
+
+model TradeAsset {
+  id               Int       @id @default(autoincrement())
+  tradeId          Int
+  trade            Trade     @relation(fields: [tradeId], references: [id])
+  side             TradeSide // which team SENT this asset (A or B)
+  assetType        AssetType
+  playerId         Int?
+  player           Player?   @relation(fields: [playerId], references: [id])
+  pickId           Int?
+  pick             Pick?     @relation(fields: [pickId], references: [id])
+  cashAmount       Float?
+  valueAtTradeTime Float?    // snapshot of pick-chart / player value at the moment of trade, for later +/- comparisons
+
+  @@index([tradeId])
+  @@index([playerId])
+  @@index([pickId])
+}
+
+// The self-adjusting pick value chart. Seeded once from a Jimmy-Johnson-style
+// curve, then a new row is written per slot whenever real trades cause a
+// recalculation — so the chart's own history is inspectable, not just its
+// current state.
+model PickValueCurve {
+  id            Int      @id @default(autoincrement())
+  overallSlot   Int
+  value         Float
+  effectiveDate DateTime @default(now())
+  derivedFrom   String   @default("seed") // "seed" | "trade:<tradeId>" | "manual"
+
+  @@index([overallSlot, effectiveDate])
+}
+
+model StandingsSnapshot {
+  id        Int      @id @default(autoincrement())
+  teamId    Int
+  team      Team     @relation(fields: [teamId], references: [id])
+  asOf      DateTime
+  wins      Int
+  losses    Int
+  ties      Int      @default(0)
+  gb        Float?
+  streak    String?
+  raw       Json?
+
+  @@index([teamId, asOf])
+}
+
+// Editable tooltip text for every column, including columns that show up
+// for the first time from a new CSV/JSON import.
+model TooltipDef {
+  id          Int      @id @default(autoincrement())
+  fieldKey    String   @unique
+  label       String
+  description String
+  source      String   @default("BUILTIN") // "BUILTIN" | "IMPORTED"
+}
+
+// Saved "at least / at most / is / is not" filter sets per tab, so a Big
+// Board or Power/Speed-style view can be redefined without touching code.
+model FilterPreset {
+  id        Int      @id @default(autoincrement())
+  scope     String   // e.g. "big_board", "power_speed", "starter_projects"
+  name      String
+  rules     Json     // [{ field, op: "gte"|"lte"|"eq"|"neq", value }]
+  createdAt DateTime @default(now())
+}
+
+model SyncLog {
+  id         Int      @id @default(autoincrement())
+  endpoint   String
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  status     String   // "ok" | "error" | "rate_limited" | "pending"
+  message    String?
+}
+
+// One row per /draftpool pull during an active draft — cheap, so keeping
+// history (rather than overwriting) lets you see the pool shrink pick by
+// pick if you ever want to look back at draft-day velocity.
+model DraftPoolSnapshot {
+  id                Int      @id @default(autoincrement())
+  draftYear         Int
+  asOf              DateTime @default(now())
+  remainingCount    Int
+  remainingPlayerIds Json    // array of player IDs still in the pool at this moment
+}
+

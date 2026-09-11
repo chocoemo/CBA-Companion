@@ -1,0 +1,59 @@
+name: Sync CBA data
+
+# Runs 4x/day, roughly 12am / 8am / 2pm / 8pm US Eastern (adjusted for
+# Daylight Saving below). GitHub's cron uses UTC and can run a few minutes
+# late during busy periods — that's normal and fine for this use case.
+#
+# NOTE ON DAYLIGHT SAVING: these UTC hours are set for Eastern Daylight Time
+# (UTC-4, roughly mid-March to early November). During Eastern Standard Time
+# (UTC-5, winter), everything will run an hour later than intended (e.g. the
+# "8pm" run happens at 9pm instead). That's a cosmetic issue, not a broken
+# one — nudge the hours below by 1 if you want it exact during the offseason.
+on:
+  schedule:
+    - cron: "0 4,12,18,0 * * *"
+  workflow_dispatch: {} # lets you trigger a sync manually from the Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kick off teams + players + ratings sync
+        id: run_all
+        run: |
+          RESPONSE=$(curl -sf -X POST "${{ secrets.APP_URL }}/api/sync/run-all" \
+            -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}")
+          echo "$RESPONSE"
+          echo "scout_log_id=$(echo "$RESPONSE" | jq -r '.results.ratings_scout.logId // empty')" >> "$GITHUB_OUTPUT"
+          echo "osa_log_id=$(echo "$RESPONSE" | jq -r '.results.ratings_osa.logId // empty')" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the ratings dump to be generated
+        run: sleep 90
+
+      - name: Poll for scout ratings (retries up to ~5 minutes)
+        if: steps.run_all.outputs.scout_log_id != ''
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            RESPONSE=$(curl -sf -X POST "${{ secrets.APP_URL }}/api/sync/ratings/poll" \
+              -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}" \
+              -H "content-type: application/json" \
+              -d "{\"logId\": ${{ steps.run_all.outputs.scout_log_id }}}")
+            echo "$RESPONSE"
+            STATUS=$(echo "$RESPONSE" | jq -r '.status // empty')
+            if [ "$STATUS" = "ready" ] || [ "$STATUS" = "error" ]; then break; fi
+            sleep 30
+          done
+
+      - name: Poll for OSA ratings (retries up to ~5 minutes)
+        if: steps.run_all.outputs.osa_log_id != ''
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            RESPONSE=$(curl -sf -X POST "${{ secrets.APP_URL }}/api/sync/ratings/poll" \
+              -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}" \
+              -H "content-type: application/json" \
+              -d "{\"logId\": ${{ steps.run_all.outputs.osa_log_id }}}")
+            echo "$RESPONSE"
+            STATUS=$(echo "$RESPONSE" | jq -r '.status // empty')
+            if [ "$STATUS" = "ready" ] || [ "$STATUS" = "error" ]; then break; fi
+            sleep 30
+          done

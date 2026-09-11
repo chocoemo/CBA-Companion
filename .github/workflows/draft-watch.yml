@@ -1,0 +1,37 @@
+name: Draft watch (manual)
+
+# /draftpool and /draftv2 have NO documented rate limit (unlike /ratings),
+# so this polls much more aggressively than the 4x/day sync — but only
+# while YOU tell it to, since there's no way to auto-detect "the draft just
+# started" from outside StatsPlus.
+#
+# HOW TO USE: repo -> Actions tab -> "Draft watch (manual)" -> "Run workflow"
+# the moment the draft begins. It'll poll on the interval you set below
+# (default 60s) for the duration you set (default ~5h50m, just under
+# GitHub's 6-hour single-job limit). If the draft is still going when it
+# stops, just click "Run workflow" again — it picks up right where the data
+# left off, nothing is lost by the gap.
+on:
+  workflow_dispatch:
+    inputs:
+      interval_seconds:
+        description: "Seconds between checks (no rate limit on these endpoints, but be reasonable — 30-60s is plenty for a human-paced draft)"
+        default: "60"
+      duration_minutes:
+        description: "How long to keep polling before stopping (max ~350 to stay under GitHub's 6h job limit)"
+        default: "350"
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Poll draft endpoints on a loop
+        run: |
+          END=$((SECONDS + ${{ github.event.inputs.duration_minutes }} * 60))
+          while [ $SECONDS -lt $END ]; do
+            RESPONSE=$(curl -sf -X POST "${{ secrets.APP_URL }}/api/sync/draft" \
+              -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}") || RESPONSE="(request failed, will retry)"
+            echo "$(date -u +%H:%M:%S) - $RESPONSE"
+            sleep "${{ github.event.inputs.interval_seconds }}"
+          done
