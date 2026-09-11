@@ -14,9 +14,14 @@ function buildSeedCurve(totalPicks: number) {
 }
 
 // Idempotent — safe to call more than once (e.g. re-triggered by mistake).
+// Team ID 105 is Calgary/Stampede's real StatsPlus team_id, confirmed from
+// a live /teams pull (team 1 is actually Chicago/Zephyrs — an earlier
+// placeholder guess here used id 1, which was wrong).
 export async function runSeed(prisma: PrismaClient) {
+  const CALGARY_TEAM_ID = 105;
+
   const team = await prisma.team.upsert({
-    where: { id: 1 },
+    where: { id: CALGARY_TEAM_ID },
     update: {
       colorPrimary: "#B66A3C",
       colorSecondary: "#4A2E3A",
@@ -25,15 +30,29 @@ export async function runSeed(prisma: PrismaClient) {
       isDefaultControlling: true,
     },
     create: {
-      id: 1,
+      id: CALGARY_TEAM_ID,
       name: "Calgary",
-      nickname: "Calgary",
+      nickname: "Stampede",
       abbr: "CAL",
       colorPrimary: "#B66A3C",
       colorSecondary: "#4A2E3A",
       colorTertiary: "#F2E6D2",
       colorAccent: "#804F55",
       isDefaultControlling: true,
+    },
+  });
+
+  // Self-heal from the earlier wrong-placeholder-ID mistake: if any OTHER
+  // team was accidentally left as "default controlling" or holding
+  // Calgary's colors (from before we knew Calgary's real ID), clear it.
+  await prisma.team.updateMany({
+    where: { id: { not: CALGARY_TEAM_ID }, isDefaultControlling: true },
+    data: {
+      isDefaultControlling: false,
+      colorPrimary: null,
+      colorSecondary: null,
+      colorTertiary: null,
+      colorAccent: null,
     },
   });
 

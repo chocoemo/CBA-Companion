@@ -67,34 +67,58 @@ function withToken(path: string, params: Record<string, string | number | boolea
   return url.toString();
 }
 
-// Handles the API's "HTTP 200 but it's actually a plain-text message for a
-// human" footgun documented across every rate-limited/async endpoint.
-async function fetchChecked(url: string): Promise<Response> {
+// IMPORTANT: several endpoints that return REAL data (/teams, /players,
+// /contract, /contractextension, /atbats, /draftpool, /date, /tokencheck)
+// are served with Content-Type text/plain — the SAME content type used for
+// the API's "this is a message for a human" errors (rate limits, bad
+// tokens, etc). So content-type alone can't tell data and errors apart.
+// Instead we match the small, specific set of known human-message phrases
+// documented by the API, and treat everything else as real data regardless
+// of its content type.
+const HUMAN_MESSAGE_PATTERNS: RegExp[] = [
+  /request too soon,?\s*wait \d+ seconds/i,
+  /this api requires user to be logged in/i,
+  /invalid or unknown api token/i,
+  /api token has expired/i,
+  /ratings are not published for this league/i,
+  /the ratings are being updated/i,
+  /request id .* still in progress/i,
+  /request id .* is not recognized/i,
+  /the request id is no longer valid/i,
+  /no such api endpoint/i,
+  /^token expired$/i,
+  /^invalid token$/i,
+  /voting is still open/i,
+  /at-bat data has not been imported/i,
+];
+
+function looksLikeHumanMessage(text: string): boolean {
+  return HUMAN_MESSAGE_PATTERNS.some((re) => re.test(text));
+}
+
+// Fetches a URL, checks HTTP-level errors, then checks the BODY (not the
+// content-type) against known "message for a human" phrases before handing
+// the raw text back to the caller to parse as CSV/JSON/whatever it expects.
+async function fetchChecked(url: string): Promise<{ text: string; status: number }> {
   const res = await fetch(url, {
     headers: { "User-Agent": USER_AGENT },
     cache: "no-store",
   });
 
-  if (res.status === 204) return res; // no data — caller should treat as empty
-  if (res.status === 429) {
-    const text = await res.text();
-    throw new StatsPlusRateLimitError(parseWaitSeconds(text), text);
-  }
-  if (res.status >= 400) {
-    const text = await res.text();
-    throw new Error(`StatsPlus API ${res.status}: ${text}`);
-  }
+  if (res.status === 204) return { text: "", status: 204 };
 
-  const contentType = res.headers.get("content-type") ?? "";
-  if (contentType.startsWith("text/plain")) {
-    const text = await res.text();
+  const text = await res.text();
+
+  if (res.status === 429) throw new StatsPlusRateLimitError(parseWaitSeconds(text), text);
+  if (res.status >= 400) throw new Error(`StatsPlus API ${res.status}: ${text}`);
+
+  if (looksLikeHumanMessage(text)) {
     const waitMatch = text.match(/wait (\d+) seconds/i);
     if (waitMatch) throw new StatsPlusRateLimitError(Number(waitMatch[1]), text);
-    // "still in progress" is handled by the caller (ratings poller), not here.
     throw new StatsPlusHumanMessageError(text);
   }
 
-  return res;
+  return { text, status: res.status };
 }
 
 function parseWaitSeconds(text: string): number {
@@ -141,68 +165,72 @@ export function parseCsv(text: string): Record<string, string>[] {
 // ---- Endpoints ----
 
 export async function getDate(): Promise<string> {
-  const res = await fetchChecked(withToken("/date/"));
-  return (await res.text()).trim();
+  const { text } = await fetchChecked(withToken("/date/"));
+  return text.trim();
 }
 
 export async function getTeams() {
-  const res = await fetchChecked(withToken("/teams/"));
-  return parseCsv(await res.text());
+  const { text, status } = await fetchChecked(withToken("/teams/"));
+  if (status === 204 || !text) return [];
+  return parseCsv(text);
 }
 
 export async function getLgData() {
-  const res = await fetchChecked(withToken("/lgdata/"));
-  return res.json();
+  const { text, status } = await fetchChecked(withToken("/lgdata/"));
+  if (status === 204 || !text) return null;
+  return JSON.parse(text);
 }
 
 export async function getPlayers(opts: { retiredOnly0?: boolean } = {}) {
-  const res = await fetchChecked(
+  const { text, status } = await fetchChecked(
     withToken("/players/", opts.retiredOnly0 ? { retired: 0 } : {})
   );
-  if (res.status === 204) return [];
-  return parseCsv(await res.text());
+  if (status === 204 || !text) return [];
+  return parseCsv(text);
 }
 
 export async function getContracts() {
-  const res = await fetchChecked(withToken("/contract/"));
-  if (res.status === 204) return [];
-  return parseCsv(await res.text());
+  const { text, status } = await fetchChecked(withToken("/contract/"));
+  if (status === 204 || !text) return [];
+  return parseCsv(text);
 }
 
 export async function getContractExtensions() {
-  const res = await fetchChecked(withToken("/contractextension/"));
-  if (res.status === 204) return [];
-  return parseCsv(await res.text());
+  const { text, status } = await fetchChecked(withToken("/contractextension/"));
+  if (status === 204 || !text) return [];
+  return parseCsv(text);
 }
 
 export async function getDraftPool(lid?: number) {
-  const res = await fetchChecked(withToken("/draftpool/", { lid }));
-  if (res.status === 204) return [];
-  return parseCsv(await res.text());
+  const { text, status } = await fetchChecked(withToken("/draftpool/", { lid }));
+  if (status === 204 || !text) return [];
+  return parseCsv(text);
 }
 
 export async function getDraftV2() {
-  const res = await fetchChecked(withToken("/draftv2/"));
-  return res.json();
+  const { text, status } = await fetchChecked(withToken("/draftv2/"));
+  if (status === 204 || !text) return null;
+  return JSON.parse(text);
 }
 
 export async function getTradeBlock(): Promise<number[]> {
-  const res = await fetchChecked(withToken("/tradeblock/"));
-  const json = await res.json();
+  const { text, status } = await fetchChecked(withToken("/tradeblock/"));
+  if (status === 204 || !text) return [];
+  const json = JSON.parse(text);
   return json.player_ids ?? [];
 }
 
 export async function getBallparks(lid?: number) {
-  const res = await fetchChecked(withToken("/ballparks/", { lid }));
-  return res.json();
+  const { text, status } = await fetchChecked(withToken("/ballparks/", { lid }));
+  if (status === 204 || !text) return null;
+  return JSON.parse(text);
 }
 
 // /ratings is async: kick off the request, get back a mycsv URL, poll it.
 // osa=true bypasses auth (anonymous, 15 min/IP rate limit) and always
 // returns OSA ratings — use osa=false with a token for your own scouts.
 export async function requestRatings(osa: boolean): Promise<string> {
-  const res = await fetchChecked(withToken("/ratings/", osa ? { osa: 1 } : {}));
-  const text = await res.text();
+  const { text } = await fetchChecked(withToken("/ratings/", osa ? { osa: 1 } : {}));
   const urlMatch = text.match(/https:\/\/\S+mycsv\S+/);
   if (!urlMatch) throw new Error(`Unexpected /ratings response: ${text}`);
   return urlMatch[0];
