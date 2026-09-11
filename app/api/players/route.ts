@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// Next.js caches GET route handlers at build time by default unless told
+// otherwise — without this, the response gets frozen as whatever the
+// database looked like during the Vercel build (empty, since syncs hadn't
+// run yet), and never re-queries the database on real requests afterward.
+export const dynamic = "force-dynamic";
+
 // GET /api/players
 // Returns every non-retired player with their MOST RECENT scout snapshot
 // and most recent OSA snapshot side by side, so the frontend can default to
