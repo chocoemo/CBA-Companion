@@ -21,6 +21,7 @@ export type PlayerCardData = {
   age: number | null;
   bats: string | null;
   throws: string | null;
+  college: string | null;
   scout: RatingBlock;
   osa: RatingBlock;
 };

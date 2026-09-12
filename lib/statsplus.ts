@@ -231,10 +231,14 @@ export async function getDraftPool(lid?: number) {
   return parseCsv(text);
 }
 
+// Confirmed live: /draftv2 is CSV (same as /teams, /players, /contract),
+// NOT JSON — columns are ID (player id), Round, Pick In Round, Supp
+// (supplemental pick flag), Overall, Player Name, Team, Team ID, Position,
+// Age, College (0/empty = high schooler), Auto Pick, Time (UTC).
 export async function getDraftV2() {
   const { text, status } = await fetchChecked(withToken("/draftv2/"));
-  if (status === 204 || !text) return null;
-  return safeJsonParse(text, "/draftv2");
+  if (status === 204 || !text) return [];
+  return parseCsv(text);
 }
 
 export async function getTradeBlock(): Promise<number[]> {

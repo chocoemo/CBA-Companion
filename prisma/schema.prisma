@@ -126,6 +126,7 @@ model Player {
   draftYear         Int?
   draftRound        Int?
   draftOverallPick  Int?
+  college           String?  // from /draftv2's "College" column — 0/empty means high schooler
   mlbServiceYears   Int?
   mlbServiceDays    Int?
   isOn40Man         Boolean  @default(false)

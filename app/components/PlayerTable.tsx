@@ -11,6 +11,17 @@ type ColumnSet = "draft" | "roster"; // draft: age/class-focused. roster: team/o
 
 type SortKey = "name" | "team" | "level" | "pos" | "age" | "overall" | "potential" | "fitScore";
 
+// Best-effort JUCO/2-year detection from the college name string itself —
+// there's no dedicated field for it, so this is a heuristic, not a
+// guarantee. Worth double-checking against real draft classes.
+function classLabel(college: string | null): string {
+  if (!college) return "HS";
+  if (/\b(community college|junior college|\bjc\b|jr\.? college)\b/i.test(college)) {
+    return `${college} (2YR)`;
+  }
+  return college;
+}
+
 export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; columns: ColumnSet; teamId?: number | null }) {
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
   const [truncated, setTruncated] = useState(false);
@@ -136,6 +147,7 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
               {columns === "roster" && <th onClick={() => toggleSort("team")}>Team</th>}
               {columns === "roster" && <th onClick={() => toggleSort("level")}>Level</th>}
               <th onClick={() => toggleSort("pos")}>Pos</th>
+              {columns === "draft" && <th data-tooltip="0/blank College from /draftv2 means high schooler">Class</th>}
               {columns === "draft" && <th>Position Fit</th>}
               {columns === "draft" && <th onClick={() => toggleSort("fitScore")} data-tooltip="Weighted composite from your Settings-page tool weights">Fit Score</th>}
               <th onClick={() => toggleSort("age")}>Age</th>
@@ -155,6 +167,9 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
                   {columns === "roster" && <td>{p.team?.abbr ?? "FA"}</td>}
                   {columns === "roster" && <td>{p.level ?? "—"}</td>}
                   <td>{p.pos}{p.role ? `/${p.role}` : ""}</td>
+                  {columns === "draft" && (
+                    <td style={{ fontSize: 11 }}>{classLabel(p.college)}</td>
+                  )}
                   {columns === "draft" && (
                     <td style={{ fontSize: 11 }}>
                       {fit && fit.recommendedPos !== p.pos ? `→ ${fit.recommendedPos}` : "—"}
