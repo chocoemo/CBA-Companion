@@ -11,8 +11,9 @@ type ColumnSet = "draft" | "roster"; // draft: age/class-focused. roster: team/o
 
 type SortKey = "name" | "team" | "level" | "pos" | "age" | "overall" | "potential" | "fitScore";
 
-export default function PlayerTable({ pool, columns }: { pool: Pool; columns: ColumnSet }) {
+export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; columns: ColumnSet; teamId?: number | null }) {
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
+  const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("overall");
@@ -22,13 +23,33 @@ export default function PlayerTable({ pool, columns }: { pool: Pool; columns: Co
   const [fitWeights, setFitWeights] = useState<{ hitter: Record<string, number>; pitcher: Record<string, number> } | null>(null);
 
   useEffect(() => {
+    // "all" without a team would try to ship 9000+ players in one response
+    // and blow the serverless timeout — don't even fetch until a team's picked.
+    if (pool === "all" && !teamId) {
+      setPlayers([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    fetch(`/api/players?pool=${pool}`)
-      .then((r) => r.json())
-      .then((data) => setPlayers(data))
-      .catch((e) => setError(String(e)))
+    setError(null);
+    const qs = new URLSearchParams({ pool });
+    if (teamId) qs.set("teamId", String(teamId));
+    fetch(`/api/players?${qs.toString()}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+        const contentType = r.headers.get("content-type") ?? "";
+        if (!contentType.includes("application/json")) {
+          throw new Error("Server returned a non-JSON response (likely a timeout on a very large query)");
+        }
+        return r.json();
+      })
+      .then((data) => {
+        setPlayers(data.players ?? []);
+        setTruncated(!!data.truncated);
+      })
+      .catch((e) => setError(String(e.message ?? e)))
       .finally(() => setLoading(false));
-  }, [pool]);
+  }, [pool, teamId]);
 
   useEffect(() => {
     if (columns !== "draft") return;
@@ -90,10 +111,20 @@ export default function PlayerTable({ pool, columns }: { pool: Pool; columns: Co
       {loading && <p>Loading…</p>}
       {error && <p style={{ color: "crimson" }}>{error}</p>}
 
-      {!loading && !error && players.length === 0 && (
+      {!loading && !error && pool === "all" && !teamId && (
+        <p style={{ opacity: 0.7 }}>Pick a team above to load its players — the full league list is too large to load at once.</p>
+      )}
+
+      {!loading && !error && (pool !== "all" || teamId) && players.length === 0 && (
         <p style={{ opacity: 0.7 }}>
           No players in this view yet — make sure the relevant syncs have run
           {pool === "draft" ? " (the draft-watch workflow, or a manual /api/sync/draft call)" : ""}.
+        </p>
+      )}
+
+      {truncated && (
+        <p style={{ opacity: 0.7, fontSize: 12, marginBottom: 8 }}>
+          Showing the first {players.length} — narrow with a team filter to see everyone in that team.
         </p>
       )}
 

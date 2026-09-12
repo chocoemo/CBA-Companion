@@ -126,6 +126,30 @@ function parseWaitSeconds(text: string): number {
   return m ? Number(m[1]) : 60;
 }
 
+// A few endpoints (/draftv2 seen live, possibly others) don't always return
+// clean single-document JSON — e.g. a stray leading token before the real
+// object. Rather than let a native SyntaxError with just a character
+// position surface (useless for debugging), this tries a straight parse
+// first, then recovers by parsing from the first { or [, and if that still
+// fails, throws an error that includes an actual snippet of what came back
+// so the next failure is diagnosable instead of cryptic.
+function safeJsonParse(text: string, label: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const start = text.search(/[{\[]/);
+    if (start > 0) {
+      try {
+        return JSON.parse(text.slice(start));
+      } catch {
+        // fall through to the diagnostic error below
+      }
+    }
+    const snippet = text.slice(0, 300);
+    throw new Error(`${label}: response was not valid JSON. Raw snippet: ${JSON.stringify(snippet)}`);
+  }
+}
+
 // ---- Simple CSV parser (no external dep, good enough for S+'s quoted CSVs) ----
 export function parseCsv(text: string): Record<string, string>[] {
   const rows: string[][] = [];
@@ -178,7 +202,7 @@ export async function getTeams() {
 export async function getLgData() {
   const { text, status } = await fetchChecked(withToken("/lgdata/"));
   if (status === 204 || !text) return null;
-  return JSON.parse(text);
+  return safeJsonParse(text, "/lgdata");
 }
 
 export async function getPlayers(opts: { retiredOnly0?: boolean } = {}) {
@@ -210,20 +234,20 @@ export async function getDraftPool(lid?: number) {
 export async function getDraftV2() {
   const { text, status } = await fetchChecked(withToken("/draftv2/"));
   if (status === 204 || !text) return null;
-  return JSON.parse(text);
+  return safeJsonParse(text, "/draftv2");
 }
 
 export async function getTradeBlock(): Promise<number[]> {
   const { text, status } = await fetchChecked(withToken("/tradeblock/"));
   if (status === 204 || !text) return [];
-  const json = JSON.parse(text);
+  const json = safeJsonParse(text, "/tradeblock");
   return json.player_ids ?? [];
 }
 
 export async function getBallparks(lid?: number) {
   const { text, status } = await fetchChecked(withToken("/ballparks/", { lid }));
   if (status === 204 || !text) return null;
-  return JSON.parse(text);
+  return safeJsonParse(text, "/ballparks");
 }
 
 // /ratings is async: kick off the request, get back a mycsv URL, poll it.

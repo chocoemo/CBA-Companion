@@ -22,14 +22,14 @@ export async function POST(req: Request) {
         update: {
           name: row["Name"],
           nickname: row["Nickname"],
-          parentTeamId: row["Parent Team ID"] ? Number(row["Parent Team ID"]) : null,
+          parentTeamId: Number(row["Parent Team ID"] ?? 0) > 0 ? Number(row["Parent Team ID"]) : null,
         },
         create: {
           id: Number(row["ID"]),
           name: row["Name"],
           nickname: row["Nickname"],
           abbr: row["Nickname"]?.slice(0, 3).toUpperCase() ?? "???",
-          parentTeamId: row["Parent Team ID"] ? Number(row["Parent Team ID"]) : null,
+          parentTeamId: Number(row["Parent Team ID"] ?? 0) > 0 ? Number(row["Parent Team ID"]) : null,
         },
       });
       count++;
