@@ -24,64 +24,73 @@ export async function GET(req: Request) {
   const pool = searchParams.get("pool") ?? "all";
   const teamId = searchParams.get("teamId") ? Number(searchParams.get("teamId")) : null;
 
-  let draftPoolIds: number[] | null = null;
-  let foreignLeagueIds: number[] | null = null;
+  try {
+    let draftPoolIds: number[] | null = null;
+    let foreignLeagueIds: number[] | null = null;
 
-  if (pool === "draft") {
-    const latestSnapshot = await prisma.draftPoolSnapshot.findFirst({ orderBy: { asOf: "desc" } });
-    draftPoolIds = (latestSnapshot?.remainingPlayerIds as number[] | undefined) ?? [];
-  } else if (pool === "international") {
-    const foreignLeagues = await prisma.league.findMany({ where: { isCbaAffiliated: false } });
-    foreignLeagueIds = foreignLeagues.map((l) => l.id);
-  }
+    if (pool === "draft") {
+      const latestSnapshot = await prisma.draftPoolSnapshot.findFirst({ orderBy: { asOf: "desc" } });
+      draftPoolIds = (latestSnapshot?.remainingPlayerIds as number[] | undefined) ?? [];
+    } else if (pool === "international") {
+      const foreignLeagues = await prisma.league.findMany({ where: { isCbaAffiliated: false } });
+      foreignLeagueIds = foreignLeagues.map((l) => l.id);
+    }
 
-  // "all" with no team filter is the dangerous case — the whole player
-  // database with ratings joined is too big for one request. Require a
-  // team, or cap it hard and tell the caller why the list is truncated.
-  const isUnboundedAll = pool === "all" && !teamId;
+    // "all" with no team filter is the dangerous case — the whole player
+    // database with ratings joined is too big for one request. Require a
+    // team, or cap it hard and tell the caller why the list is truncated.
+    const isUnboundedAll = pool === "all" && !teamId;
 
-  const players = await prisma.player.findMany({
-    where: {
-      retired: false,
-      ...(pool === "fa" ? { teamId: null } : {}),
-      ...(foreignLeagueIds ? { leagueId: { in: foreignLeagueIds } } : {}),
-      ...(draftPoolIds ? { id: { in: draftPoolIds } } : {}),
-      ...(teamId ? { teamId } : {}),
-    },
-    include: {
-      team: { select: { id: true, name: true, nickname: true, abbr: true } },
-      ratings: {
-        orderBy: { capturedAt: "desc" },
-        take: 2, // one SCOUT + one OSA is all we need — take:10 was needlessly heavy at this row count
+    const players = await prisma.player.findMany({
+      where: {
+        retired: false,
+        ...(pool === "fa" ? { teamId: null } : {}),
+        ...(foreignLeagueIds ? { leagueId: { in: foreignLeagueIds } } : {}),
+        ...(draftPoolIds ? { id: { in: draftPoolIds } } : {}),
+        ...(teamId ? { teamId } : {}),
       },
-    },
-    orderBy: { lastName: "asc" },
-    take: isUnboundedAll ? MAX_UNFILTERED : undefined,
-  });
+      include: {
+        team: { select: { id: true, name: true, nickname: true, abbr: true } },
+        ratings: {
+          orderBy: { capturedAt: "desc" },
+          take: 2, // one SCOUT + one OSA is all we need — take:10 was needlessly heavy at this row count
+        },
+      },
+      orderBy: { lastName: "asc" },
+      take: isUnboundedAll ? MAX_UNFILTERED : undefined,
+    });
 
-  const shaped = players.map((p) => {
-    const scout = p.ratings.find((r) => r.source === "SCOUT");
-    const osa = p.ratings.find((r) => r.source === "OSA");
-    return {
-      id: p.id,
-      name: `${p.firstName} ${p.lastName}`,
-      lastName: p.lastName,
-      team: p.team ? { id: p.team.id, abbr: p.team.abbr } : null,
-      level: p.level,
-      pos: p.pos,
-      role: p.role,
-      age: p.age,
-      bats: p.bats,
-      throws: p.throws,
-      isCollege: p.isCollege,
-      leagueId: p.leagueId,
-      scout: scout ? { overall: scout.overall, potential: scout.potential, tools: scout.tools, capturedAt: scout.capturedAt } : null,
-      osa: osa ? { overall: osa.overall, potential: osa.potential, tools: osa.tools, capturedAt: osa.capturedAt } : null,
-    };
-  });
+    const shaped = players.map((p) => {
+      const scout = p.ratings.find((r) => r.source === "SCOUT");
+      const osa = p.ratings.find((r) => r.source === "OSA");
+      return {
+        id: p.id,
+        name: `${p.firstName} ${p.lastName}`,
+        lastName: p.lastName,
+        team: p.team ? { id: p.team.id, abbr: p.team.abbr } : null,
+        level: p.level,
+        pos: p.pos,
+        role: p.role,
+        age: p.age,
+        bats: p.bats,
+        throws: p.throws,
+        isCollege: p.isCollege,
+        leagueId: p.leagueId,
+        scout: scout ? { overall: scout.overall, potential: scout.potential, tools: scout.tools, capturedAt: scout.capturedAt } : null,
+        osa: osa ? { overall: osa.overall, potential: osa.potential, tools: osa.tools, capturedAt: osa.capturedAt } : null,
+      };
+    });
 
-  return NextResponse.json({
-    players: shaped,
-    truncated: isUnboundedAll && players.length === MAX_UNFILTERED,
-  });
+    return NextResponse.json({
+      players: shaped,
+      truncated: isUnboundedAll && players.length === MAX_UNFILTERED,
+    });
+  } catch (err: any) {
+    // Surface the real error instead of letting Next.js return a generic
+    // HTML 500 page — that's what turned this into a guessing game last time.
+    return NextResponse.json(
+      { players: [], truncated: false, error: `pool=${pool} teamId=${teamId}: ${String(err?.message ?? err)}` },
+      { status: 500 }
+    );
+  }
 }

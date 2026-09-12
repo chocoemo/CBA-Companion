@@ -47,12 +47,13 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
     if (teamId) qs.set("teamId", String(teamId));
     fetch(`/api/players?${qs.toString()}`)
       .then(async (r) => {
-        if (!r.ok) throw new Error(`Server returned ${r.status}`);
         const contentType = r.headers.get("content-type") ?? "";
         if (!contentType.includes("application/json")) {
-          throw new Error("Server returned a non-JSON response (likely a timeout on a very large query)");
+          throw new Error(`Server returned ${r.status} with a non-JSON response (likely a timeout on a very large query)`);
         }
-        return r.json();
+        const data = await r.json();
+        if (!r.ok) throw new Error(data?.error ?? `Server returned ${r.status}`);
+        return data;
       })
       .then((data) => {
         setPlayers(data.players ?? []);

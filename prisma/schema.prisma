@@ -47,7 +47,8 @@ model Team {
   id                Int         @id // StatsPlus team_id
   name              String
   nickname          String
-  abbr              String
+  abbr              String      // from /lgdata's teams[].abbr — the REAL abbreviation, not a guess
+  leagueId          Int?        // from /lgdata's teams[].league_id — drives CBA-vs-international filtering
   tier              LeagueTier?
   divisionId        Int?
   parentTeamId      Int?
@@ -323,11 +324,21 @@ model StandingsSnapshot {
 // league with no tie to a CBA org). isCbaAffiliated starts false for
 // anything new and gets confirmed manually via Settings once real league
 // IDs are visible, rather than guessed automatically and possibly wrong.
+// Every league in the save, from /lgdata — the CBA's own PL/SL/BL AND any
+// unaffiliated foreign leagues. `primaryLeague` is /lgdata's own
+// "top-level S+ league" flag, which is the authoritative signal for CBA
+// affiliation (previously guessed/manually classified — this replaces
+// that guesswork). isCbaAffiliated defaults from primaryLeague on every
+// sync; the Settings page can still override it for edge cases.
 model League {
   id               Int      @id // StatsPlus league_id
   name             String
+  abbr             String?
+  level            Int?     // Level ID, see reference table (1=ml, 2=aaa, ...)
+  parentLeagueId   Int?
+  primaryLeague    Boolean  @default(false)
   isCbaAffiliated  Boolean  @default(false)
-  tier             LeagueTier? // set for PL/SL/BL only
+  tier             LeagueTier? // best-effort name match (premier/silver/bronze) — unconfirmed until checked against real names
   raw              Json?
   updatedAt        DateTime @updatedAt
 }
