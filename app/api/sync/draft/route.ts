@@ -88,7 +88,7 @@ export async function POST(req: Request) {
       }
     }
 
-    results.picks = { ok: true, created, updated, collegeUpdates, totalSeen: rows.length };
+    results.picks = { ok: true, created, updated, collegeUpdates, totalSeen: rows.length, sampleRows: rows.slice(0, 5) };
   } catch (err: any) {
     results.picks = { ok: false, error: String(err?.message ?? err) };
   }

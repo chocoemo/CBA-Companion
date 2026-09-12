@@ -5,6 +5,7 @@ import PlayerCard, { PlayerCardData } from "@/app/components/PlayerCard";
 import { getRatingColor } from "@/lib/ratingColor";
 import { recommendPosition } from "@/lib/positionFit";
 import { computeFitScore } from "@/lib/fitScore";
+import FilterBar, { FilterRule, PosTypeFilter, getFilterFieldValue, ruleMatches } from "@/app/components/FilterBar";
 
 type Pool = "draft" | "fa" | "international" | "all";
 type ColumnSet = "draft" | "roster"; // draft: age/class-focused. roster: team/org/level-focused.
@@ -32,6 +33,8 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
   const [ratingSource, setRatingSource] = useState<"scout" | "osa">("scout"); // scout default, per spec
   const [selected, setSelected] = useState<PlayerCardData | null>(null);
   const [fitWeights, setFitWeights] = useState<{ hitter: Record<string, number>; pitcher: Record<string, number> } | null>(null);
+  const [posType, setPosType] = useState<PosTypeFilter>("all");
+  const [rules, setRules] = useState<FilterRule[]>([]);
 
   useEffect(() => {
     // "all" without a team would try to ship 9000+ players in one response
@@ -69,8 +72,22 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
 
   const PITCHER_POS = new Set(["P", "SP", "RP", "CL"]);
 
+  const filtered = useMemo(() => {
+    return players.filter((p) => {
+      const isPitcher = PITCHER_POS.has(p.pos ?? "");
+      if (posType === "hitters" && isPitcher) return false;
+      if (posType === "pitchers" && !isPitcher) return false;
+      const block = ratingSource === "scout" ? p.scout : p.osa;
+      for (const rule of rules) {
+        const value = getFilterFieldValue(rule.field, p, block);
+        if (!ruleMatches(value, rule.op, rule.value)) return false;
+      }
+      return true;
+    });
+  }, [players, posType, rules, ratingSource]);
+
   const sorted = useMemo(() => {
-    const withVal = players.map((p) => {
+    const withVal = filtered.map((p) => {
       const block = ratingSource === "scout" ? p.scout : p.osa;
       const weights = fitWeights ? (PITCHER_POS.has(p.pos ?? "") ? fitWeights.pitcher : fitWeights.hitter) : undefined;
       const fitScore = columns === "draft" ? computeFitScore(p.pos, block?.tools, weights) : null;
@@ -79,7 +96,7 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
     withVal.sort((a, b) => {
       let av: string | number, bv: string | number;
       switch (sortKey) {
-        case "name": av = a.p.name; bv = b.p.name; break;
+        case "name": av = a.p.lastName; bv = b.p.lastName; break;
         case "team": av = a.p.team?.abbr ?? ""; bv = b.p.team?.abbr ?? ""; break;
         case "level": av = a.p.level ?? ""; bv = b.p.level ?? ""; break;
         case "pos": av = a.p.pos ?? ""; bv = b.p.pos ?? ""; break;
@@ -93,7 +110,7 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
       return 0;
     });
     return withVal;
-  }, [players, sortKey, sortDir, ratingSource, fitWeights, columns]);
+  }, [filtered, sortKey, sortDir, ratingSource, fitWeights, columns]);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) setSortDir((d) => (d === 1 ? -1 : 1));
@@ -102,6 +119,8 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
 
   return (
     <div>
+      <FilterBar posType={posType} onPosTypeChange={setPosType} rules={rules} onRulesChange={setRules} />
+
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
         <div style={{ background: "var(--team-secondary)", padding: 4, borderRadius: 8 }}>
           <button
@@ -126,6 +145,10 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
         <p style={{ opacity: 0.7 }}>Pick a team above to load its players — the full league list is too large to load at once.</p>
       )}
 
+      {!loading && !error && (pool !== "all" || teamId) && players.length > 0 && filtered.length === 0 && (
+        <p style={{ opacity: 0.7 }}>No players match the current filters.</p>
+      )}
+
       {!loading && !error && (pool !== "all" || teamId) && players.length === 0 && (
         <p style={{ opacity: 0.7 }}>
           No players in this view yet — make sure the relevant syncs have run
@@ -139,7 +162,7 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
         </p>
       )}
 
-      {!loading && players.length > 0 && (
+      {!loading && filtered.length > 0 && (
         <table className="data-table">
           <thead>
             <tr>

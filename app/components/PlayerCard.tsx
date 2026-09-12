@@ -14,6 +14,7 @@ type RatingBlock = {
 export type PlayerCardData = {
   id: number;
   name: string;
+  lastName: string;
   team: { id: number; abbr: string } | null;
   level: string | null;
   pos: string | null;
@@ -38,17 +39,30 @@ export default function PlayerCard({ player, onClose }: { player: PlayerCardData
   const isPitcher = IS_PITCHER_POS.has(player.pos ?? "");
   const headlineKeys = isPitcher ? PITCHER_HEADLINE : HITTER_HEADLINE;
 
+  // Current AND potential per tool — important for anyone not yet in the
+  // majors (draft prospects especially), since "what they are now" and
+  // "what they could become" both matter for evaluating readiness/ceiling.
   const headlineTools = headlineKeys
     .filter((k) => block?.tools && block.tools[k] !== null && block.tools[k] !== undefined)
-    .map((k) => [k, block!.tools[k] as number] as const);
+    .map((k) => ({
+      key: k,
+      current: block!.tools[k] as number,
+      potential: (block!.tools[`${k}Pot`] as number | null | undefined) ?? null,
+    }));
 
   const positionRatings: Record<string, number | null> | null = block?.tools?.positionRatings ?? null;
   const positionRatingsPot: Record<string, number | null> | null = block?.tools?.positionRatingsPot ?? null;
   const posFit = positionRatings ? recommendPosition(positionRatings, positionRatingsPot) : null;
 
+  const potKeySet = new Set(headlineKeys.map((k) => `${k}Pot`));
   const otherTools = block?.tools
     ? Object.entries(block.tools).filter(
-        ([k, v]) => !headlineKeys.includes(k) && k !== "positionRatings" && v !== null && v !== undefined && v !== 0
+        ([k, v]) =>
+          !headlineKeys.includes(k) &&
+          !potKeySet.has(k) &&
+          k !== "positionRatings" &&
+          k !== "positionRatingsPot" &&
+          v !== null && v !== undefined && v !== 0
       )
     : [];
 
@@ -108,31 +122,52 @@ export default function PlayerCard({ player, onClose }: { player: PlayerCardData
             </div>
 
             <div className="tool-grid">
-              {headlineTools.map(([k, v]) => (
+              {headlineTools.map(({ key, current, potential }) => (
                 <div
                   className="tool-chip"
-                  key={k}
-                  data-tooltip={`${k} (20-80 scale; can exceed 80)`}
-                  style={{ background: getRatingBg(v) }}
+                  key={key}
+                  data-tooltip={`${key}: current → potential (20-80 scale; can exceed 80)`}
+                  style={{ background: getRatingBg(current) }}
                 >
-                  <div className="label">{k}</div>
-                  <div className="value" style={{ color: getRatingColor(v) }}>{v}</div>
+                  <div className="label">{key}</div>
+                  <div className="value" style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                    <span style={{ color: getRatingColor(current) }}>{current}</span>
+                    {potential !== null && potential !== current && (
+                      <>
+                        <span style={{ fontSize: 12, opacity: 0.5 }}>→</span>
+                        <span style={{ fontSize: 15, color: getRatingColor(potential) }}>{potential}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
 
             {positionRatings && (
               <details style={{ margin: "0 20px 16px" }} open>
-                <summary style={{ cursor: "pointer", fontSize: 12, opacity: 0.7 }}>Position fit</summary>
+                <summary style={{ cursor: "pointer", fontSize: 12, opacity: 0.7 }}>
+                  Position fit <span style={{ fontWeight: 400, opacity: 0.7 }}>(current → potential)</span>
+                </summary>
                 <div className="tool-grid">
                   {Object.entries(positionRatings)
                     .filter(([, v]) => v !== null && v !== undefined)
-                    .map(([pos, v]) => (
-                      <div className="tool-chip" key={pos} style={{ background: getRatingBg(v as number) }}>
-                        <div className="label">{pos}</div>
-                        <div className="value" style={{ color: getRatingColor(v as number) }}>{v}</div>
-                      </div>
-                    ))}
+                    .map(([pos, v]) => {
+                      const pot = positionRatingsPot?.[pos] ?? null;
+                      return (
+                        <div className="tool-chip" key={pos} style={{ background: getRatingBg(v as number) }}>
+                          <div className="label">{pos}</div>
+                          <div className="value" style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                            <span style={{ color: getRatingColor(v as number) }}>{v}</span>
+                            {pot !== null && pot !== v && (
+                              <>
+                                <span style={{ fontSize: 12, opacity: 0.5 }}>→</span>
+                                <span style={{ fontSize: 15, color: getRatingColor(pot) }}>{pot}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
               </details>
             )}

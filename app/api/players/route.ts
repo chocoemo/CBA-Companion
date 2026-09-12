@@ -65,6 +65,7 @@ export async function GET(req: Request) {
     return {
       id: p.id,
       name: `${p.firstName} ${p.lastName}`,
+      lastName: p.lastName,
       team: p.team ? { id: p.team.id, abbr: p.team.abbr } : null,
       level: p.level,
       pos: p.pos,
