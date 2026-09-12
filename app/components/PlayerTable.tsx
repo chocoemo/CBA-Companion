@@ -12,15 +12,12 @@ type ColumnSet = "draft" | "roster"; // draft: age/class-focused. roster: team/o
 
 type SortKey = "name" | "team" | "level" | "pos" | "age" | "overall" | "potential" | "fitScore";
 
-// Best-effort JUCO/2-year detection from the college name string itself —
-// there's no dedicated field for it, so this is a heuristic, not a
-// guarantee. Worth double-checking against real draft classes.
-function classLabel(college: string | null): string {
-  if (!college) return "HS";
-  if (/\b(community college|junior college|\bjc\b|jr\.? college)\b/i.test(college)) {
-    return `${college} (2YR)`;
-  }
-  return college;
+// StatsPlus only gives a 1/0 college flag, no school name — so "HS" vs
+// "College" is as specific as this can ever get; JUCO/4-year isn't
+// derivable from this data source at all.
+function classLabel(isCollege: boolean | null): string {
+  if (isCollege === null) return "—";
+  return isCollege ? "College" : "HS";
 }
 
 export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; columns: ColumnSet; teamId?: number | null }) {
@@ -191,7 +188,7 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
                   {columns === "roster" && <td>{p.level ?? "—"}</td>}
                   <td>{p.pos}{p.role ? `/${p.role}` : ""}</td>
                   {columns === "draft" && (
-                    <td style={{ fontSize: 11 }}>{classLabel(p.college)}</td>
+                    <td style={{ fontSize: 11 }}>{classLabel(p.isCollege)}</td>
                   )}
                   {columns === "draft" && (
                     <td style={{ fontSize: 11 }}>

@@ -22,7 +22,7 @@ export type PlayerCardData = {
   age: number | null;
   bats: string | null;
   throws: string | null;
-  college: string | null;
+  isCollege: boolean | null;
   scout: RatingBlock;
   osa: RatingBlock;
 };

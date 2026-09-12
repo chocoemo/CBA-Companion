@@ -73,7 +73,7 @@ export async function GET(req: Request) {
       age: p.age,
       bats: p.bats,
       throws: p.throws,
-      college: p.college,
+      isCollege: p.isCollege,
       leagueId: p.leagueId,
       scout: scout ? { overall: scout.overall, potential: scout.potential, tools: scout.tools, capturedAt: scout.capturedAt } : null,
       osa: osa ? { overall: osa.overall, potential: osa.potential, tools: osa.tools, capturedAt: osa.capturedAt } : null,

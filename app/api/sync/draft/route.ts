@@ -50,40 +50,46 @@ export async function POST(req: Request) {
     for (const row of rows) {
       const playerId = Number(row["ID"]);
       const round = Number(row["Round"]);
+      const pickInRound = Number(row["Pick In Round"]);
       const overallSlot = Number(row["Overall"]);
       const teamId = Number(row["Team ID"]);
-      if (!playerId || !round || !teamId) continue;
+      if (!playerId || !round || !teamId || !overallSlot) continue;
 
-      // Ensure the Pick row exists — original owner isn't known from
-      // draftv2 alone (that comes from the pre-draft pick order / trade
-      // history), so if it's not already in the DB, seed it with
-      // currentOwner = the team that actually picked (best info at draft time).
+      // Keyed by (draftYear, overallSlot) — the actual unique identifier of
+      // a pick. Round+team is NOT unique: a team can have several picks in
+      // one round (comp/supplemental picks), which is exactly what caused
+      // the earlier bug where extra same-team-same-round picks overwrote
+      // each other instead of being tracked separately.
       const pickRecord = await prisma.pick.upsert({
-        where: { draftYear_round_originalTeamId: { draftYear, round, originalTeamId: teamId } },
-        update: overallSlot ? { overallSlot } : {},
-        create: { draftYear, round, overallSlot, originalTeamId: teamId, currentOwnerTeamId: teamId },
+        where: { draftYear_overallSlot: { draftYear, overallSlot } },
+        update: { round, pickInRound, originalTeamId: teamId, currentOwnerTeamId: teamId },
+        create: { draftYear, round, pickInRound, overallSlot, originalTeamId: teamId, currentOwnerTeamId: teamId },
       });
 
       const existing = await prisma.draftResult.findUnique({ where: { pickId: pickRecord.id } });
       if (existing) {
-        if (existing.playerId !== playerId) {
-          await prisma.draftResult.update({ where: { pickId: pickRecord.id }, data: { playerId } });
+        if (existing.playerId !== playerId || existing.round !== round || existing.pickInRound !== pickInRound) {
+          await prisma.draftResult.update({
+            where: { pickId: pickRecord.id },
+            data: { playerId, teamId, round, pickInRound, overallSlot },
+          });
           updated++;
         }
       } else {
         await prisma.draftResult.create({
-          data: { pickId: pickRecord.id, playerId, teamId, year: draftYear, round, overallSlot: overallSlot || 0 },
+          data: { pickId: pickRecord.id, playerId, teamId, year: draftYear, round, pickInRound, overallSlot },
         });
         created++;
       }
 
-      // College: 0/empty means a high schooler — persisted on Player since
-      // it's a fixed attribute of the player, not just this pick.
-      const collegeRaw = (row["College"] ?? "").trim();
-      const college = collegeRaw && collegeRaw !== "0" ? collegeRaw : null;
+      // College is a plain 1/0 flag, NOT a school name — the API doesn't
+      // give us an actual college name anywhere, so "HS" vs "College" is
+      // the most specific this can ever be from this data source.
+      const collegeFlag = row["College"];
+      const isCollege = collegeFlag === "1" ? true : collegeFlag === "0" ? false : null;
       const existingPlayer = await prisma.player.findUnique({ where: { id: playerId } });
-      if (existingPlayer && existingPlayer.college !== college) {
-        await prisma.player.update({ where: { id: playerId }, data: { college } });
+      if (existingPlayer && existingPlayer.isCollege !== isCollege) {
+        await prisma.player.update({ where: { id: playerId }, data: { isCollege } });
         collegeUpdates++;
       }
     }

@@ -126,7 +126,7 @@ model Player {
   draftYear         Int?
   draftRound        Int?
   draftOverallPick  Int?
-  college           String?  // from /draftv2's "College" column — 0/empty means high schooler
+  isCollege         Boolean? // from /draftv2's "College" column: 1=college, 0=high schooler. No school name is provided by the API.
   mlbServiceYears   Int?
   mlbServiceDays    Int?
   isOn40Man         Boolean  @default(false)
@@ -204,7 +204,11 @@ model Pick {
   id                Int      @id @default(autoincrement())
   draftYear         Int
   round             Int
-  overallSlot       Int?     // filled in once draft order is set for that year
+  pickInRound       Int?     // position within the round — combined with round for display, e.g. "2-19"
+  overallSlot       Int?     // the TRUE unique identifier of a pick within a draft year — a team can have
+                              // multiple picks in one round (comp/supplemental), so this (not round+team)
+                              // is what must be unique. Learned the hard way: round+team collided and
+                              // silently overwrote extra picks from the same team in the same round.
   originalTeamId    Int
   originalTeam      Team     @relation("OriginalTeam", fields: [originalTeamId], references: [id])
   currentOwnerTeamId Int
@@ -214,7 +218,7 @@ model Pick {
   tradeAssets       TradeAsset[]
   draftResult       DraftResult?
 
-  @@unique([draftYear, round, originalTeamId])
+  @@unique([draftYear, overallSlot])
   @@index([currentOwnerTeamId])
 }
 
@@ -228,6 +232,7 @@ model DraftResult {
   team          Team        @relation(fields: [teamId], references: [id])
   year          Int
   round         Int
+  pickInRound   Int?
   overallSlot   Int
   intendedLevel MinorLevel? // where YOU plan to assign this pick once eligible — set manually, not synced
 }

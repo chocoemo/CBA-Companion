@@ -15,13 +15,15 @@ export const TOOL_FIELD_MAP: Record<string, { current: string; potential?: strin
   eye: { current: "Eye", potential: "PotEye" },
   babip: { current: "BABIP", potential: "PotBABIP" },
   gap: { current: "Gap", potential: "PotGap" },
+  avoidK: { current: "Ks", potential: "PotKs" }, // hitter's strikeout-avoidance rating
   speed: { current: "Speed" },
   steal: { current: "Steal" },
   stuff: { current: "Stf", potential: "PotStf" },
   control: { current: "Ctrl", potential: "PotCtrl" },
   movement: { current: "Mov", potential: "PotMov" },
   stamina: { current: "Stm" },
-  holdRunners: { current: "Hold" },
+  pbabip: { current: "PBABIP", potential: "PotPBABIP" }, // pitcher's BABIP-against tendency
+  holdRunners: { current: "Hold" }, // no potential field exists for this in the API's export
 };
 
 // Individual pitch grades (starters/relievers only carry non-zero values
@@ -38,6 +40,7 @@ export const PITCH_FIELD_MAP: Record<string, { current: string; potential?: stri
   knuckleball: { current: "Knbl", potential: "PotKnbl" },
   knuckleCurve: { current: "Kncrv", potential: "PotKncrv" },
   circleChange: { current: "CirChg", potential: "PotCirChg" },
+  screwball: { current: "Scr", potential: "PotScr" },
 };
 
 // Defensive suitability at each position, 20-80 scale — this is exactly
@@ -45,7 +48,12 @@ export const PITCH_FIELD_MAP: Record<string, { current: string; potential?: stri
 // logic (see lib/positionFit.ts).
 export const POSITION_RATING_KEYS = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "P"] as const;
 
-// Fielding sub-tools (range/error/arm), split infield vs outfield vs catcher.
+// Fielding sub-tools (range/error/arm/double-play). NONE of these have a
+// separate potential field in the API's export — only the per-position
+// overall suitability above (C/1B/2B/... + Pot-prefixed) projects a
+// ceiling. These are current-ability-only, which is exactly what's useful
+// for spotting dev-lab defensive-growth candidates: a player with strong
+// arm/range but a lower overall grade at a position is a good bet.
 export const FIELDING_FIELD_MAP: Record<string, string> = {
   infieldArm: "IFA",
   infieldError: "IFE",
@@ -56,6 +64,7 @@ export const FIELDING_FIELD_MAP: Record<string, string> = {
   catcherArm: "CArm",
   catcherBlock: "CBlk",
   catcherFraming: "CFrm",
+  turnDoublePlay: "TDP",
 };
 
 // Makeup / personality — useful for the "at least/at most/is/is not" filter

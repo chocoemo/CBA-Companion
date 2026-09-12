@@ -12,18 +12,19 @@ export async function GET(req: Request) {
     where: year ? { year } : {},
     include: {
       player: { select: { id: true, firstName: true, lastName: true, pos: true, age: true } },
-      team: { select: { id: true, abbr: true, name: true } },
+      team: { select: { id: true, abbr: true, name: true, nickname: true } },
     },
-    orderBy: [{ round: "asc" }, { overallSlot: "asc" }],
+    orderBy: [{ overallSlot: "asc" }],
   });
 
   return NextResponse.json(
     results.map((r) => ({
       id: r.id,
       round: r.round,
+      pickInRound: r.pickInRound,
       overallSlot: r.overallSlot,
       intendedLevel: r.intendedLevel,
-      team: r.team,
+      team: { id: r.team.id, name: `${r.team.name} ${r.team.nickname}` },
       player: { id: r.player.id, name: `${r.player.firstName} ${r.player.lastName}`, pos: r.player.pos, age: r.player.age },
     }))
   );
