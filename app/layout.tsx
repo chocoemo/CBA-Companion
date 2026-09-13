@@ -1,5 +1,6 @@
 import "./globals.css";
 import { DEFAULT_THEME, themeToCssVars } from "@/lib/theme";
+import TabNav from "@/app/components/TabNav";
 
 export const metadata = {
   title: "CBA Companion",
@@ -7,17 +8,21 @@ export const metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Phase 2 will make this dynamic (team switcher). For now Calgary's theme
-  // is the default, matching the "controlling team" concept from the spec.
-  // themeToCssVars() already returns a plain object ({ "--team-primary":
-  // "#B66A3C", ... }) — React's `style` prop must be an object, never a
-  // string, so we apply that object directly instead of joining it into a
-  // "key:value;key:value" string first.
+  // Phase-later: team switcher. Calgary's theme is the default for now.
   const vars = themeToCssVars(DEFAULT_THEME) as React.CSSProperties;
 
   return (
     <html lang="en">
-      <body style={vars}>{children}</body>
+      <body style={vars}>
+        <header className="app-header">
+          <div>
+            <div style={{ fontSize: 19, fontWeight: 800 }}>CBA Companion</div>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>Calgary — controlling team</div>
+          </div>
+        </header>
+        <TabNav />
+        <main>{children}</main>
+      </body>
     </html>
   );
 }

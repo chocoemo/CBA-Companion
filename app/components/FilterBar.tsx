@@ -46,8 +46,15 @@ export function getFilterFieldValue(
   if (field === "potential") return block?.potential ?? null;
   if (field.startsWith("pos_")) {
     const pos = field.slice(4);
-    const v = block?.tools?.positionRatings?.[pos];
-    return typeof v === "number" ? v : null;
+    const cur = block?.tools?.positionRatings?.[pos];
+    const pot = block?.tools?.positionRatingsPot?.[pos];
+    // Use whichever is higher — a pitcher's CURRENT CF rating is always
+    // near-zero since they've never played there, so filtering on current
+    // alone hides real potential-driven fits (e.g. a 60+ potential CF arm).
+    const curNum = typeof cur === "number" ? cur : -1;
+    const potNum = typeof pot === "number" ? pot : -1;
+    const best = Math.max(curNum, potNum);
+    return best >= 0 ? best : null;
   }
   const v = block?.tools?.[field];
   return typeof v === "number" ? v : null;

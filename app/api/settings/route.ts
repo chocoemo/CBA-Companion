@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_HITTER_WEIGHTS, DEFAULT_PITCHER_WEIGHTS } from "@/lib/fitScore";
+import { DEFAULT_HITTER_WEIGHTS, DEFAULT_PITCHER_WEIGHTS, DEFAULT_PITCHER_BONUSES } from "@/lib/fitScore";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/settings — returns the singleton settings row, creating it with
-// sensible defaults on first read.
+// sensible (Choco-Dashboard-confirmed) defaults on first read.
 export async function GET() {
   let settings = await prisma.settings.findUnique({ where: { id: 1 } });
   if (!settings) {
@@ -13,6 +13,7 @@ export async function GET() {
       data: {
         id: 1,
         fitWeights: { hitter: DEFAULT_HITTER_WEIGHTS, pitcher: DEFAULT_PITCHER_WEIGHTS },
+        pitcherBonuses: DEFAULT_PITCHER_BONUSES,
       },
     });
   }
@@ -28,6 +29,7 @@ export async function POST(req: Request) {
     create: {
       id: 1,
       fitWeights: body.fitWeights ?? { hitter: DEFAULT_HITTER_WEIGHTS, pitcher: DEFAULT_PITCHER_WEIGHTS },
+      pitcherBonuses: body.pitcherBonuses ?? DEFAULT_PITCHER_BONUSES,
       rosterMinC: body.rosterMinC, rosterMaxC: body.rosterMaxC,
       rosterMinIF: body.rosterMinIF, rosterMaxIF: body.rosterMaxIF,
       rosterMinOF: body.rosterMinOF, rosterMaxOF: body.rosterMaxOF,

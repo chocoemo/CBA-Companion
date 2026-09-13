@@ -30,6 +30,7 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
   const [ratingSource, setRatingSource] = useState<"scout" | "osa">("scout"); // scout default, per spec
   const [selected, setSelected] = useState<PlayerCardData | null>(null);
   const [fitWeights, setFitWeights] = useState<{ hitter: Record<string, number>; pitcher: Record<string, number> } | null>(null);
+  const [pitcherBonuses, setPitcherBonuses] = useState<Record<string, number> | null>(null);
   const [posType, setPosType] = useState<PosTypeFilter>("all");
   const [rules, setRules] = useState<FilterRule[]>([]);
 
@@ -65,7 +66,10 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
 
   useEffect(() => {
     if (columns !== "draft") return;
-    fetch("/api/settings").then((r) => r.json()).then((s) => setFitWeights(s.fitWeights ?? null));
+    fetch("/api/settings").then((r) => r.json()).then((s) => {
+      setFitWeights(s.fitWeights ?? null);
+      setPitcherBonuses(s.pitcherBonuses ?? null);
+    });
   }, [columns]);
 
   const PITCHER_POS = new Set(["P", "SP", "RP", "CL"]);
@@ -88,7 +92,7 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
     const withVal = filtered.map((p) => {
       const block = ratingSource === "scout" ? p.scout : p.osa;
       const weights = fitWeights ? (PITCHER_POS.has(p.pos ?? "") ? fitWeights.pitcher : fitWeights.hitter) : undefined;
-      const fitScore = columns === "draft" ? computeFitScore(p.pos, block?.tools, weights) : null;
+      const fitScore = columns === "draft" ? computeFitScore(p.pos, block?.tools, weights, pitcherBonuses) : null;
       return { p, overall: block?.overall ?? -1, potential: block?.potential ?? -1, fitScore: fitScore ?? -1 };
     });
     withVal.sort((a, b) => {
@@ -108,7 +112,7 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
       return 0;
     });
     return withVal;
-  }, [filtered, sortKey, sortDir, ratingSource, fitWeights, columns]);
+  }, [filtered, sortKey, sortDir, ratingSource, fitWeights, pitcherBonuses, columns]);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) setSortDir((d) => (d === 1 ? -1 : 1));
@@ -168,8 +172,8 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
               {columns === "roster" && <th onClick={() => toggleSort("team")}>Team</th>}
               {columns === "roster" && <th onClick={() => toggleSort("level")}>Level</th>}
               <th onClick={() => toggleSort("pos")}>Pos</th>
-              {columns === "draft" && <th data-tooltip="0/blank College from /draftv2 means high schooler">Class</th>}
               {columns === "draft" && <th>Position Fit</th>}
+              {columns === "draft" && <th data-tooltip="0/blank College from /draftv2 means high schooler">Class</th>}
               {columns === "draft" && <th onClick={() => toggleSort("fitScore")} data-tooltip="Weighted composite from your Settings-page tool weights">Fit Score</th>}
               <th onClick={() => toggleSort("age")}>Age</th>
               <th onClick={() => toggleSort("overall")} data-tooltip="Current-year grade, 20-80 scale (can exceed 80)">OVR</th>
@@ -184,17 +188,25 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
               const fit = posRatings ? recommendPosition(posRatings, posRatingsPot) : null;
               return (
                 <tr key={p.id} onClick={() => setSelected(p)}>
-                  <td className="left">{p.name}</td>
+                  <td className="left">
+                    <a
+                      href={`/players/${p.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ color: "inherit", textDecoration: "none", borderBottom: "1px dotted currentColor" }}
+                    >
+                      {p.name}
+                    </a>
+                  </td>
                   {columns === "roster" && <td>{p.team?.abbr ?? "FA"}</td>}
                   {columns === "roster" && <td>{p.level ?? "—"}</td>}
                   <td>{p.pos}{p.role ? `/${p.role}` : ""}</td>
                   {columns === "draft" && (
-                    <td style={{ fontSize: 11 }}>{classLabel(p.isCollege)}</td>
-                  )}
-                  {columns === "draft" && (
                     <td style={{ fontSize: 11 }}>
                       {fit && fit.recommendedPos !== p.pos ? `→ ${fit.recommendedPos}` : "—"}
                     </td>
+                  )}
+                  {columns === "draft" && (
+                    <td style={{ fontSize: 11 }}>{classLabel(p.isCollege)}</td>
                   )}
                   {columns === "draft" && (
                     <td style={{ color: getRatingColor(fitScore >= 0 ? fitScore : null), fontWeight: 700 }}>

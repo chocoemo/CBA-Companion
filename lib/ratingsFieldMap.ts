@@ -23,6 +23,7 @@ export const TOOL_FIELD_MAP: Record<string, { current: string; potential?: strin
   movement: { current: "Mov", potential: "PotMov" },
   stamina: { current: "Stm" },
   pbabip: { current: "PBABIP", potential: "PotPBABIP" }, // pitcher's BABIP-against tendency
+  hrRate: { current: "HRA", potential: "PotHRA" }, // home-run-rate-against tendency
   holdRunners: { current: "Hold" }, // no potential field exists for this in the API's export
 };
 
@@ -41,9 +42,7 @@ export const PITCH_FIELD_MAP: Record<string, { current: string; potential?: stri
   knuckleCurve: { current: "Kncrv", potential: "PotKncrv" },
   circleChange: { current: "CirChg", potential: "PotCirChg" },
   screwball: { current: "Scr", potential: "PotScr" },
-};
-
-// Defensive suitability at each position, 20-80 scale — this is exactly
+};// Defensive suitability at each position, 20-80 scale — this is exactly
 // what drives the positional-fit / "premium position 60+" recommendation
 // logic (see lib/positionFit.ts).
 export const POSITION_RATING_KEYS = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "P"] as const;
@@ -110,9 +109,27 @@ export function buildToolsObject(row: Record<string, string>): Record<string, nu
   out.positionRatingsPot = positionsPot as any;
 
   out.velocity = row["Vel"] ?? null; // e.g. "96-98", kept as a string range
+  out.velocityPot = row["PotVel"] ?? null;
   out.armSlot = row["ArmSlot"] ?? null;
   out.bats = row["Bats"] ?? null;
   out.throws = row["Throws"] ?? null;
+
+  // Groundball/flyball type bucket, needed for the fit-score bonus (see
+  // lib/fitScore.ts). The raw "GB" field is a numeric groundball tendency,
+  // not the 5-bucket category itself — these thresholds are an approximation
+  // (not confirmed against a real bucket boundary), matching Choco's
+  // Dashboard bucket NAMES ("EX GB"/"GB"/"NEU"/"FB"/"EX FB") as closely as
+  // guessable. Worth revisiting once real boundary cases are checked.
+  const gbNum = num(row["GB"]);
+  if (gbNum !== null) {
+    if (gbNum >= 65) out.gbfbType = "EX GB";
+    else if (gbNum >= 55) out.gbfbType = "GB";
+    else if (gbNum >= 45) out.gbfbType = "NEU";
+    else if (gbNum >= 35) out.gbfbType = "FB";
+    else out.gbfbType = "EX FB";
+  } else {
+    out.gbfbType = null;
+  }
 
   return out;
 }

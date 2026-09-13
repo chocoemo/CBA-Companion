@@ -34,6 +34,7 @@ export async function POST(req: Request) {
     const payload = await getLgData();
     const leagues: any[] = payload?.leagues ?? [];
     const teams: any[] = payload?.teams ?? [];
+    const standings: any[] = payload?.standings ?? [];
 
     let leaguesUpserted = 0;
     for (const lg of leagues) {
@@ -94,12 +95,32 @@ export async function POST(req: Request) {
       teamsUpserted++;
     }
 
+    let standingsUpserted = 0;
+    const asOf = new Date();
+    for (const s of standings) {
+      const teamId = Number(s.team_id);
+      if (!teamId) continue;
+      await prisma.standingsSnapshot.create({
+        data: {
+          teamId,
+          asOf,
+          wins: Number(s.w ?? 0),
+          losses: Number(s.l ?? 0),
+          ties: Number(s.t ?? 0),
+          gb: s.gb !== undefined && s.gb !== null ? Number(s.gb) : null,
+          streak: s.streak ?? null,
+          raw: s,
+        },
+      });
+      standingsUpserted++;
+    }
+
     await prisma.syncLog.update({
       where: { id: log.id },
-      data: { status: "ok", finishedAt: new Date(), message: `${leaguesUpserted} leagues, ${teamsUpserted} teams upserted` },
+      data: { status: "ok", finishedAt: new Date(), message: `${leaguesUpserted} leagues, ${teamsUpserted} teams, ${standingsUpserted} standings rows` },
     });
 
-    return NextResponse.json({ ok: true, leaguesUpserted, teamsUpserted });
+    return NextResponse.json({ ok: true, leaguesUpserted, teamsUpserted, standingsUpserted });
   } catch (err: any) {
     await prisma.syncLog.update({
       where: { id: log.id },

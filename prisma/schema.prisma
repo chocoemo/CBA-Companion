@@ -243,7 +243,8 @@ model DraftResult {
 // roster-compliance checks.
 model Settings {
   id                Int   @id @default(1)
-  fitWeights        Json  // { contact: 1, power: 1, eye: 0.5, ... } — see lib/fitScore.ts for the default set
+  fitWeights        Json  // { hitter: {...}, pitcher: {...} } — see lib/fitScore.ts for the default (Choco-confirmed) set
+  pitcherBonuses    Json? // GB/FB-type + SP bonuses added to pitcher fit score — see DEFAULT_PITCHER_BONUSES
   rosterMinC        Int?
   rosterMaxC        Int?
   rosterMinIF       Int?

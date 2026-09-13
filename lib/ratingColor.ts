@@ -1,25 +1,37 @@
-// OOTP's scouting screens shade grades on a gradient centered around 50
-// (league average on the 20-80 scale) — green for above-average, red for
-// below, with the extremes (80+ and sub-30) called out more strongly so
-// elite/bust-level grades jump out at a glance. This is a close approximation
-// of that convention; nudge the thresholds/hexes here if you want it to
-// match your game's exact palette more precisely once you can compare.
+// Matches OOTP's own in-game scouting-screen color scale exactly (as
+// specified by the user, not approximated): 20-25 red, 30-35 orange,
+// 40-45 yellow, 50-55 green, 60-65 teal, 70+ blue. 80+ gets a distinct
+// "elite" treatment (gold) so a truly special grade still stands out even
+// within the blue band.
 export function getRatingColor(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "#999";
-  if (value >= 80) return "#7d3c98"; // elite / plus-plus-plus — stands out from the green band
-  if (value >= 70) return "#1a7a3c"; // plus
-  if (value >= 60) return "#5cb85c"; // above average
-  if (value >= 45) return "#4A2E3A"; // average — falls back to the team's own text color
-  if (value >= 35) return "#e08a2b"; // below average
-  return "#c0392b"; // well below average
+  if (value === null || value === undefined) return "#888";
+  if (value >= 80) return "#C9A227"; // elite gold — stands out from ordinary 70+ blue
+  if (value >= 70) return "#3B82C4"; // blue
+  if (value >= 60) return "#2FA79B"; // teal
+  if (value >= 50) return "#4CAF50"; // green
+  if (value >= 40) return "#D8B23A"; // yellow
+  if (value >= 30) return "#E07B2E"; // orange
+  return "#D1453B"; // red
 }
 
 export function getRatingBg(value: number | null | undefined): string {
   if (value === null || value === undefined) return "transparent";
-  if (value >= 80) return "#f1e6f7";
-  if (value >= 70) return "#e3f4e8";
-  if (value >= 60) return "#eef8ee";
-  if (value >= 45) return "transparent";
-  if (value >= 35) return "#fdf0e0";
-  return "#fbe4e1";
+  if (value >= 80) return "#fbf3dd";
+  if (value >= 70) return "#e6f0f8";
+  if (value >= 60) return "#e3f5f3";
+  if (value >= 50) return "#eaf6ea";
+  if (value >= 40) return "#faf5e3";
+  if (value >= 30) return "#fbeadf";
+  return "#fbe4e2";
+}
+
+// Bar width as a percentage, mapped over the 20-80 scale. OOTP's bars show
+// a little fill even at the bottom of the scale (20) rather than starting
+// flush at 0%, and anything 80+ fills the bar completely rather than
+// running off the end — a 95 looks the same width as an 80, the number is
+// what tells them apart.
+export function getBarWidthPct(value: number | null | undefined): number {
+  if (value === null || value === undefined || value <= 0) return 0;
+  const clamped = Math.min(80, Math.max(20, value));
+  return 10 + ((clamped - 20) / (80 - 20)) * 90;
 }

@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { getRatingColor, getRatingBg } from "@/lib/ratingColor";
+import { getRatingColor } from "@/lib/ratingColor";
 import { recommendPosition } from "@/lib/positionFit";
+import { computeTwoWayTags } from "@/lib/twoWayTags";
+import StatBar from "@/app/components/StatBar";
 
 type RatingBlock = {
   overall: number | null;
@@ -27,8 +29,10 @@ export type PlayerCardData = {
   osa: RatingBlock;
 };
 
-const HITTER_HEADLINE = ["contact", "power", "eye", "babip", "speed", "gap"];
-const PITCHER_HEADLINE = ["stuff", "control", "movement", "stamina"];
+const HITTER_HEADLINE = ["contact", "power", "eye", "babip", "speed", "gap", "avoidK"];
+const PITCHER_HEADLINE = ["stuff", "control", "movement", "stamina", "hrRate", "pbabip"];
+const PITCHES = ["fastball", "slider", "curve", "changeup", "sinker", "cutter", "splitter", "forkball", "knuckleball", "knuckleCurve", "circleChange", "screwball"];
+const FIELDING = ["infieldArm", "infieldError", "infieldRange", "outfieldArm", "outfieldError", "outfieldRange", "catcherArm", "catcherBlock", "catcherFraming", "turnDoublePlay"];
 const IS_PITCHER_POS = new Set(["P", "SP", "RP", "CL"]);
 
 export default function PlayerCard({ player, onClose }: { player: PlayerCardData; onClose: () => void }) {
@@ -38,40 +42,24 @@ export default function PlayerCard({ player, onClose }: { player: PlayerCardData
   const missingOtherSource = source === "scout" ? !player.osa : !player.scout;
   const isPitcher = IS_PITCHER_POS.has(player.pos ?? "");
   const headlineKeys = isPitcher ? PITCHER_HEADLINE : HITTER_HEADLINE;
+  const tools = block?.tools ?? null;
 
-  // Current AND potential per tool — important for anyone not yet in the
-  // majors (draft prospects especially), since "what they are now" and
-  // "what they could become" both matter for evaluating readiness/ceiling.
-  const headlineTools = headlineKeys
-    .filter((k) => block?.tools && block.tools[k] !== null && block.tools[k] !== undefined)
-    .map((k) => ({
-      key: k,
-      current: block!.tools[k] as number,
-      potential: (block!.tools[`${k}Pot`] as number | null | undefined) ?? null,
-    }));
-
-  const positionRatings: Record<string, number | null> | null = block?.tools?.positionRatings ?? null;
-  const positionRatingsPot: Record<string, number | null> | null = block?.tools?.positionRatingsPot ?? null;
+  const positionRatings: Record<string, number | null> | null = tools?.positionRatings ?? null;
+  const positionRatingsPot: Record<string, number | null> | null = tools?.positionRatingsPot ?? null;
   const posFit = positionRatings ? recommendPosition(positionRatings, positionRatingsPot) : null;
-
-  const potKeySet = new Set(headlineKeys.map((k) => `${k}Pot`));
-  const otherTools = block?.tools
-    ? Object.entries(block.tools).filter(
-        ([k, v]) =>
-          !headlineKeys.includes(k) &&
-          !potKeySet.has(k) &&
-          k !== "positionRatings" &&
-          k !== "positionRatingsPot" &&
-          v !== null && v !== undefined && v !== 0
-      )
-    : [];
+  const twoWayTags = computeTwoWayTags(player.pos, tools);
 
   return (
     <div className="player-card-overlay" onClick={onClose}>
-      <div className="player-card" onClick={(e) => e.stopPropagation()}>
+      <div className="player-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620 }}>
         <div className="head">
           <div>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>{player.name}</div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>
+              {player.name}{" "}
+              <a href={`/players/${player.id}`} style={{ fontSize: 11, opacity: 0.8, color: "inherit" }}>
+                (full profile ↗)
+              </a>
+            </div>
             <div style={{ fontSize: 12, opacity: 0.85 }}>
               {player.team?.abbr ?? "FA"} · {player.level ?? "—"} · {player.pos}{player.role ? ` (${player.role})` : ""}
               {player.age ? ` · Age ${player.age}` : ""}
@@ -83,20 +71,26 @@ export default function PlayerCard({ player, onClose }: { player: PlayerCardData
                 Recommended position: <b>{posFit.recommendedPos}</b> ({posFit.reason})
               </div>
             )}
+            {twoWayTags.length > 0 && (
+              <div style={{ marginTop: 5, display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {twoWayTags.map((t) => (
+                  <span
+                    key={t.label}
+                    style={{
+                      fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                      background: t.tone === "strong" ? "#fbe4e2" : "#e3f0fb",
+                      color: t.tone === "strong" ? "#a3241c" : "#1a5a9c",
+                    }}
+                  >
+                    {t.label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="source-toggle">
-            <button
-              className={source === "scout" ? "active" : ""}
-              onClick={() => setSource("scout")}
-            >
-              Scout
-            </button>{" "}
-            <button
-              className={source === "osa" ? "active" : ""}
-              onClick={() => setSource("osa")}
-            >
-              OSA
-            </button>
+            <button className={source === "scout" ? "active" : ""} onClick={() => setSource("scout")}>Scout</button>{" "}
+            <button className={source === "osa" ? "active" : ""} onClick={() => setSource("osa")}>OSA</button>
           </div>
         </div>
 
@@ -105,95 +99,77 @@ export default function PlayerCard({ player, onClose }: { player: PlayerCardData
             No {source === "scout" ? "scouted" : "OSA"} ratings imported for this player yet.
           </div>
         ) : (
-          <>
-            <div style={{ display: "flex", gap: 20, padding: "14px 20px 0" }}>
+          <div style={{ padding: "14px 20px 18px", maxHeight: "70vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", gap: 24, marginBottom: 14 }}>
               <div>
                 <div style={{ fontSize: 10.5, textTransform: "uppercase", opacity: 0.6 }}>Overall</div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: getRatingColor(block.overall) }}>
-                  {block.overall ?? "—"}
-                </div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: getRatingColor(block.overall) }}>{block.overall ?? "—"}</div>
               </div>
               <div>
                 <div style={{ fontSize: 10.5, textTransform: "uppercase", opacity: 0.6 }}>Potential</div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: getRatingColor(block.potential) }}>
-                  {block.potential ?? "—"}
-                </div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: getRatingColor(block.potential) }}>{block.potential ?? "—"}</div>
               </div>
             </div>
 
-            <div className="tool-grid">
-              {headlineTools.map(({ key, current, potential }) => (
-                <div
-                  className="tool-chip"
-                  key={key}
-                  data-tooltip={`${key}: current → potential (20-80 scale; can exceed 80)`}
-                  style={{ background: getRatingBg(current) }}
-                >
-                  <div className="label">{key}</div>
-                  <div className="value" style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                    <span style={{ color: getRatingColor(current) }}>{current}</span>
-                    {potential !== null && potential !== current && (
-                      <>
-                        <span style={{ fontSize: 12, opacity: 0.5 }}>→</span>
-                        <span style={{ fontSize: 15, color: getRatingColor(potential) }}>{potential}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div style={{ display: "grid", gap: 5, marginBottom: 16 }}>
+              {headlineKeys
+                .filter((k) => tools && tools[k] !== null && tools[k] !== undefined)
+                .map((k) => (
+                  <StatBar key={k} label={k} current={tools![k]} potential={tools![`${k}Pot`] ?? null} />
+                ))}
             </div>
 
+            {isPitcher && PITCHES.some((k) => tools && typeof tools[k] === "number") && (
+              <details style={{ marginBottom: 16 }} open>
+                <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Pitches</summary>
+                <div style={{ display: "grid", gap: 5 }}>
+                  {PITCHES.filter((k) => tools && typeof tools[k] === "number").map((k) => (
+                    <StatBar key={k} label={k} current={tools![k]} potential={tools![`${k}Pot`] ?? null} />
+                  ))}
+                </div>
+                {tools?.velocity && (
+                  <p style={{ fontSize: 12, marginTop: 6, opacity: 0.8 }}>
+                    Velocity: {tools.velocity}{tools.velocityPot && tools.velocityPot !== tools.velocity ? ` → ${tools.velocityPot}` : ""}
+                  </p>
+                )}
+              </details>
+            )}
+
             {positionRatings && (
-              <details style={{ margin: "0 20px 16px" }} open>
-                <summary style={{ cursor: "pointer", fontSize: 12, opacity: 0.7 }}>
-                  Position fit <span style={{ fontWeight: 400, opacity: 0.7 }}>(current → potential)</span>
+              <details style={{ marginBottom: 16 }} open>
+                <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                  Position fit (current → potential)
                 </summary>
-                <div className="tool-grid">
+                <div style={{ display: "grid", gap: 5 }}>
                   {Object.entries(positionRatings)
                     .filter(([, v]) => v !== null && v !== undefined)
-                    .map(([pos, v]) => {
-                      const pot = positionRatingsPot?.[pos] ?? null;
-                      return (
-                        <div className="tool-chip" key={pos} style={{ background: getRatingBg(v as number) }}>
-                          <div className="label">{pos}</div>
-                          <div className="value" style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                            <span style={{ color: getRatingColor(v as number) }}>{v}</span>
-                            {pot !== null && pot !== v && (
-                              <>
-                                <span style={{ fontSize: 12, opacity: 0.5 }}>→</span>
-                                <span style={{ fontSize: 15, color: getRatingColor(pot) }}>{pot}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    .map(([pos, v]) => (
+                      <StatBar key={pos} label={pos} current={v as number} potential={positionRatingsPot?.[pos] ?? null} />
+                    ))}
                 </div>
               </details>
             )}
 
-            {otherTools.length > 0 && (
-              <details style={{ margin: "0 20px 16px" }}>
-                <summary style={{ cursor: "pointer", fontSize: 12, opacity: 0.7 }}>
-                  All imported fields ({otherTools.length})
-                </summary>
-                <div className="tool-grid">
-                  {otherTools.map(([k, v]) => (
-                    <div className="tool-chip" key={k}>
-                      <div className="label">{k}</div>
-                      <div className="value" style={{ fontSize: 13 }}>{String(v)}</div>
-                    </div>
+            {!isPitcher && FIELDING.some((k) => tools && typeof tools[k] === "number" && tools[k] > 0) && (
+              <details style={{ marginBottom: 16 }}>
+                <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Fielding</summary>
+                <div style={{ display: "grid", gap: 5 }}>
+                  {FIELDING.filter((k) => tools && typeof tools[k] === "number" && tools[k] > 0).map((k) => (
+                    <StatBar key={k} label={k} current={tools![k]} potential={null} />
                   ))}
                 </div>
+                <p style={{ fontSize: 10.5, opacity: 0.6, marginTop: 4 }}>
+                  No potential value exists for these — only the position grades above project a ceiling.
+                </p>
               </details>
             )}
 
             {missingOtherSource && (
-              <div style={{ padding: "0 20px 16px", fontSize: 11.5, opacity: 0.6 }}>
+              <p style={{ fontSize: 11.5, opacity: 0.6 }}>
                 No {source === "scout" ? "OSA" : "scouted"} ratings imported for this player yet.
-              </div>
+              </p>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>
