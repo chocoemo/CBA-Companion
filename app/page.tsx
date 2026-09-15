@@ -9,11 +9,38 @@ export const dynamic = "force-dynamic";
 const CONTROLLING_TEAM_ID = 105;
 
 export default async function TeamDashboardPage() {
-  const team = await prisma.team.findUnique({ where: { id: CONTROLLING_TEAM_ID } });
-  const latestStanding = await prisma.standingsSnapshot.findFirst({
-    where: { teamId: CONTROLLING_TEAM_ID },
-    orderBy: { asOf: "desc" },
-  });
+  // Wrapped so a database/schema problem shows an actionable message here
+  // instead of Next.js's opaque "Application error: a server-side
+  // exception has occurred" page, which gives no way to diagnose it
+  // without digging through server logs.
+  let team = null;
+  let latestStanding = null;
+  let loadError: string | null = null;
+
+  try {
+    team = await prisma.team.findUnique({ where: { id: CONTROLLING_TEAM_ID } });
+    latestStanding = await prisma.standingsSnapshot.findFirst({
+      where: { teamId: CONTROLLING_TEAM_ID },
+      orderBy: { asOf: "desc" },
+    });
+  } catch (err: any) {
+    loadError = String(err?.message ?? err);
+  }
+
+  if (loadError) {
+    return (
+      <div style={{ maxWidth: 820 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Couldn&apos;t load the dashboard</h1>
+        <p style={{ fontSize: 13, marginBottom: 10 }}>
+          This is usually a database/schema mismatch after a deploy. Open{" "}
+          <a href="/api/health" style={{ color: "var(--team-primary)" }}>/api/health</a> for a per-table breakdown.
+        </p>
+        <pre style={{ background: "#fff", padding: 12, borderRadius: 6, fontSize: 11.5, overflowX: "auto", whiteSpace: "pre-wrap" }}>
+          {loadError}
+        </pre>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 820 }}>
@@ -34,7 +61,7 @@ export default async function TeamDashboardPage() {
           <div style={{ display: "flex", gap: 26 }}>
             <Stat label="Record" value={`${latestStanding.wins}-${latestStanding.losses}`} />
             <Stat label="GB" value={latestStanding.gb?.toString() ?? "—"} />
-            <Stat label="Streak" value={formatStreak(latestStanding.streak)} />
+            <Stat label="Streak" value={formatStreak(latestStanding.streakNum)} />
           </div>
         )}
       </section>

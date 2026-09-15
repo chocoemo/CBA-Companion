@@ -45,7 +45,7 @@ export default async function StandingsPage() {
             <td>{r.losses}</td>
             <td>{(r.wins / Math.max(1, r.wins + r.losses)).toFixed(3).replace(/^0/, "")}</td>
             <td>{r.gb ?? "—"}</td>
-            <td>{formatStreak(r.streak)}</td>
+            <td>{formatStreak(r.streakNum)}</td>
           </tr>
         ))}
       </tbody>

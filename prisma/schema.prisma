@@ -319,7 +319,12 @@ model StandingsSnapshot {
   losses    Int
   ties      Int      @default(0)
   gb        Float?
-  streak    Int?     // positive = win streak of that length, negative = loss streak (StatsPlus sends a plain int, not "W3"/"L2")
+  // NOTE: deliberately named streakNum rather than reusing `streak`.
+  // This column was originally String?; changing it to Int? in place makes
+  // `prisma db push` fail, because Postgres refuses to auto-cast text to
+  // integer ("cannot be cast automatically to type integer") even when the
+  // table is empty. Renaming makes it a safe drop-old/add-new instead.
+  streakNum Int?     // positive = win streak of that length, negative = loss streak (StatsPlus sends a plain int, not "W3"/"L2")
   raw       Json?
 
   @@index([teamId, asOf])
