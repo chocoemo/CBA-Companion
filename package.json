@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma db push --accept-data-loss && next build",
+    "build": "prisma generate && (prisma db push --accept-data-loss || echo '::warning:: prisma db push FAILED — site will deploy but the database schema may be out of date. Check /api/health after deploy.') && next build",
     "start": "next start",
     "prisma:studio": "prisma studio"
   },
