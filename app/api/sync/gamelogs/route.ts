@@ -67,8 +67,22 @@ export async function POST(req: Request) {
   // --- Plate appearances (whole league, no filters — see design note) ---
   try {
     const rows = await getAtBats();
+
+    // /atbats returns the ENTIRE current season every call. Pushing all of
+    // it at the database every sync (even with skipDuplicates absorbing
+    // the writes) meant re-transmitting the full season 4x/day, which is
+    // what burned through the free tier's network-transfer quota. Games
+    // already stored are filtered out here, client-side, so only genuinely
+    // new games get sent.
+    const storedGames = await prisma.plateAppearance.findMany({
+      select: { gameId: true },
+      distinct: ["gameId"],
+    });
+    const storedGameIds = new Set(storedGames.map((g) => g.gameId));
+
     const data = rows
       .filter((r) => r["game_id"] && r["player_id"])
+      .filter((r) => !storedGameIds.has(r["game_id"]))
       .map((r) => ({
         gameId: r["game_id"],
         playerId: Number(r["player_id"]),
@@ -104,7 +118,13 @@ export async function POST(req: Request) {
       }));
 
     const inserted = await prisma.plateAppearance.createMany({ data, skipDuplicates: true });
-    results.plateAppearances = { ok: true, seen: data.length, newlyInserted: inserted.count };
+    results.plateAppearances = {
+      ok: true,
+      newRowsSent: data.length,
+      newlyInserted: inserted.count,
+      gamesAlreadyStored: storedGameIds.size,
+      totalRowsFromApi: rows.length,
+    };
   } catch (err: any) {
     results.plateAppearances = { ok: false, error: String(err?.message ?? err) };
   }

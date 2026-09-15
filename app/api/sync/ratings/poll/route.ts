@@ -12,7 +12,8 @@ import type { RatingSource } from "@prisma/client";
 // Column mapping is now hard-coded from a real export (see
 // lib/ratingsFieldMap.ts) — Overall is "Ovr", Potential is "Pot", and every
 // named tool (Cntct, Pow, Eye, Stf, Ctrl, etc.) is mapped explicitly rather
-// than guessed. The full raw row is still kept in `raw` regardless.
+// than guessed. The raw row copy was REMOVED to halve storage — everything
+// needed is mapped into `tools`.
 export async function POST(req: Request) {
   const authCheck = checkSyncSecret(req);
   if (!authCheck.ok) return authCheck.response;
@@ -48,37 +49,75 @@ export async function POST(req: Request) {
 
   let count = 0;
   let skippedNoPlayer = 0;
+  let skippedUnchanged = 0;
   const capturedAt = new Date();
+
+  // Load every player and their latest snapshot hash for this source in
+  // two queries instead of two per player — the old per-row findUnique
+  // loop was ~19k round trips per sync, which is what blew through the
+  // network-transfer quota as much as the row count blew through storage.
+  const players = await prisma.player.findMany({ select: { id: true, height: true } });
+  const playerById = new Map(players.map((p) => [p.id, p]));
+
+  const latestHashes = new Map<number, string | null>();
+  const existing = await prisma.ratingSnapshot.findMany({
+    where: { source },
+    orderBy: { capturedAt: "desc" },
+    select: { playerId: true, toolsHash: true, capturedAt: true },
+  });
+  for (const snap of existing) {
+    if (!latestHashes.has(snap.playerId)) latestHashes.set(snap.playerId, snap.toolsHash);
+  }
+
+  const toCreate: any[] = [];
+  const heightUpdates: { id: number; height: number }[] = [];
+
   for (const row of result.rows) {
     const playerId = Number(row[idKey]);
     if (!playerId) continue;
 
-    const player = await prisma.player.findUnique({ where: { id: playerId } });
+    const player = playerById.get(playerId);
     if (!player) { skippedNoPlayer++; continue; } // sync /players first so ratings always join to a known player
 
     const tools = buildToolsObject(row);
     if (typeof tools.height === "number" && player.height !== tools.height) {
-      await prisma.player.update({ where: { id: playerId }, data: { height: tools.height as number } });
+      heightUpdates.push({ id: playerId, height: tools.height as number });
     }
 
-    await prisma.ratingSnapshot.create({
-      data: {
-        playerId,
-        source,
-        capturedAt,
-        overall: num(row["Ovr"]),
-        potential: num(row["Pot"]),
-        tools,
-        raw: row,
-      },
-    });
+    const overall = num(row["Ovr"]);
+    const potential = num(row["Pot"]);
+    const toolsHash = hashTools(overall, potential, tools);
+
+    // Ratings change rarely — writing an identical row 4x/day for every
+    // player is what filled the database. Only record actual changes.
+    if (latestHashes.get(playerId) === toolsHash) { skippedUnchanged++; continue; }
+
+    toCreate.push({ playerId, source, capturedAt, overall, potential, tools, toolsHash });
     count++;
+  }
+
+  if (toCreate.length > 0) {
+    await prisma.ratingSnapshot.createMany({ data: toCreate });
+  }
+  for (const h of heightUpdates) {
+    await prisma.player.update({ where: { id: h.id }, data: { height: h.height } });
   }
 
   await prisma.syncLog.update({
     where: { id: logId },
-    data: { status: "ok", finishedAt: new Date(), message: `${count} rating snapshots stored (${skippedNoPlayer} skipped, no matching player)` },
+    data: { status: "ok", finishedAt: new Date(), message: `${count} changed snapshots stored (${skippedUnchanged} unchanged, ${skippedNoPlayer} no matching player)` },
   });
 
-  return NextResponse.json({ ok: true, status: "ready", count, skippedNoPlayer });
+  return NextResponse.json({ ok: true, status: "ready", count, skippedUnchanged, skippedNoPlayer });
+}
+
+// Cheap, stable fingerprint of a player's ratings. Not cryptographic —
+// it just has to reliably differ when any value differs.
+function hashTools(overall: number | null, potential: number | null, tools: Record<string, any>): string {
+  const payload = JSON.stringify([overall, potential, tools]);
+  let h = 0;
+  for (let i = 0; i < payload.length; i++) {
+    h = (h * 31 + payload.charCodeAt(i)) | 0;
+  }
+  return String(h);
 }

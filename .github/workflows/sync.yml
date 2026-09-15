@@ -1,24 +1,50 @@
 name: Sync CBA data
 
-# Runs 4x/day, roughly 12am / 8am / 2pm / 8pm US Eastern (adjusted for
-# Daylight Saving below). GitHub's cron uses UTC and can run a few minutes
-# late during busy periods — that's normal and fine for this use case.
+# Split into two jobs on purpose, after a free-tier database was filled up
+# and suspended by over-syncing:
 #
-# NOTE ON DAYLIGHT SAVING: these UTC hours are set for Eastern Daylight Time
-# (UTC-4, roughly mid-March to early November). During Eastern Standard Time
-# (UTC-5, winter), everything will run an hour later than intended (e.g. the
-# "8pm" run happens at 9pm instead). That's a cosmetic issue, not a broken
-# one — nudge the hours below by 1 if you want it exact during the offseason.
+#   light (4x/day)  — teams, players, standings/leagues. Small, cheap.
+#   heavy (1x/day)  — ratings dumps, game logs, season stats. These are the
+#                     big transfers. Ratings barely move day to day, and the
+#                     app now only stores actual CHANGES, so syncing these
+#                     four times a day bought nothing and cost a lot.
+#
+# NOTE ON DAYLIGHT SAVING: UTC hours below are set for Eastern Daylight Time
+# (UTC-4). During Eastern Standard Time (winter) everything runs an hour
+# later than labeled. Cosmetic — nudge the hours if you want it exact.
 on:
   schedule:
-    - cron: "0 4,12,18,0 * * *"
-  workflow_dispatch: {} # lets you trigger a sync manually from the Actions tab
+    - cron: "0 4,12,18,0 * * *"   # light: ~12am / 8am / 2pm / 8pm ET
+    - cron: "30 4 * * *"          # heavy: ~12:30am ET, once daily
+  workflow_dispatch:
+    inputs:
+      run_heavy:
+        description: "Also run the heavy syncs (ratings/game logs/season stats)?"
+        type: boolean
+        default: false
 
 jobs:
-  sync:
+  light:
+    # Runs on the 4x/day schedule and on any manual trigger.
+    if: github.event.schedule != '30 4 * * *'
     runs-on: ubuntu-latest
     steps:
-      - name: Kick off teams + players + ratings sync
+      - name: Teams + players
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/sync/run-all" \
+            -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}" || echo "run-all failed"
+
+      - name: Leagues, teams, standings
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/sync/lgdata" \
+            -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}" || echo "lgdata failed"
+
+  heavy:
+    # Runs once daily, or manually when run_heavy is checked.
+    if: github.event.schedule == '30 4 * * *' || github.event.inputs.run_heavy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kick off ratings dumps
         id: run_all
         run: |
           RESPONSE=$(curl -sf -X POST "${{ secrets.APP_URL }}/api/sync/run-all" \
@@ -57,3 +83,13 @@ jobs:
             if [ "$STATUS" = "ready" ] || [ "$STATUS" = "error" ]; then break; fi
             sleep 30
           done
+
+      - name: Game logs (box scores + plate appearances)
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/sync/gamelogs" \
+            -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}" || echo "gamelogs failed"
+
+      - name: Season stats
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/sync/playerstats" \
+            -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}" || echo "playerstats failed"

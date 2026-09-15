@@ -153,6 +153,14 @@ model Player {
 // because hitters/pitchers carry different tool sets and the league may add
 // custom scouted categories (e.g. personality/makeup) later — those become
 // new keys here, and get a TooltipDef entry rather than a schema change.
+// STORAGE NOTE: this table nearly killed a free-tier Neon project. It's
+// append-only by design (rating history matters), but the original version
+// inserted a row per player per source on EVERY sync (4x/day × ~9,385
+// players × 2 sources ≈ 75k fat rows/day) AND stored the full rating data
+// twice (`tools` plus a redundant `raw` copy). Two fixes: the `raw`
+// duplicate is gone (everything needed is mapped into `tools`), and
+// `toolsHash` lets the sync skip writing when nothing actually changed —
+// ratings move rarely, so in steady state this now writes almost nothing.
 model RatingSnapshot {
   id          Int          @id @default(autoincrement())
   playerId    Int
@@ -162,7 +170,7 @@ model RatingSnapshot {
   overall     Int?         // 20-80 scale; can exceed 80 per league convention
   potential   Int?
   tools       Json         // e.g. { "contact":55, "power":60, "eye":50, "babip":52, "stuff":0, "control":0, ... }
-  raw         Json?        // full raw ratings dump row
+  toolsHash   String?      // cheap change-detector so unchanged ratings don't create a new row
 
   @@index([playerId, source, capturedAt])
 }

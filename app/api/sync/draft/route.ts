@@ -32,9 +32,20 @@ export async function POST(req: Request) {
       .map((r) => Number(r["ID"]))
       .filter((n) => Number.isFinite(n));
 
-    await prisma.draftPoolSnapshot.create({
-      data: { draftYear, remainingCount: remainingIds.length, remainingPlayerIds: remainingIds },
+    // During a live draft this runs every ~60s. Writing an identical
+    // snapshot (with a 400+ element id array) every minute is pure waste —
+    // only record when the pool actually changed.
+    const lastSnapshot = await prisma.draftPoolSnapshot.findFirst({
+      where: { draftYear },
+      orderBy: { asOf: "desc" },
+      select: { remainingCount: true },
     });
+    const poolChanged = !lastSnapshot || lastSnapshot.remainingCount !== remainingIds.length;
+    if (poolChanged) {
+      await prisma.draftPoolSnapshot.create({
+        data: { draftYear, remainingCount: remainingIds.length, remainingPlayerIds: remainingIds },
+      });
+    }
 
     // College is only known to be a confirmed column on /draftv2 — trying
     // the same key here defensively in case /draftpool mirrors it (Big
@@ -60,6 +71,7 @@ export async function POST(req: Request) {
     results.pool = {
       ok: true,
       remaining: remainingIds.length,
+      snapshotWritten: poolChanged,
       collegeColumnFound: !!collegeKey,
       poolCollegeUpdates,
       sampleColumns: poolRows[0] ? Object.keys(poolRows[0]) : [],
