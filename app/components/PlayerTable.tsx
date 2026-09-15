@@ -5,20 +5,13 @@ import PlayerCard, { PlayerCardData } from "@/app/components/PlayerCard";
 import { getRatingColor } from "@/lib/ratingColor";
 import { recommendPosition } from "@/lib/positionFit";
 import { computeFitScore } from "@/lib/fitScore";
+import { classLabel } from "@/lib/classLabel";
 import FilterBar, { FilterRule, PosTypeFilter, getFilterFieldValue, ruleMatches } from "@/app/components/FilterBar";
 
 type Pool = "draft" | "fa" | "international" | "all";
 type ColumnSet = "draft" | "roster"; // draft: age/class-focused. roster: team/org/level-focused.
 
 type SortKey = "name" | "team" | "level" | "pos" | "age" | "overall" | "potential" | "fitScore";
-
-// StatsPlus only gives a 1/0 college flag, no school name — so "HS" vs
-// "College" is as specific as this can ever get; JUCO/4-year isn't
-// derivable from this data source at all.
-function classLabel(isCollege: boolean | null): string {
-  if (isCollege === null) return "—";
-  return isCollege ? "College" : "HS";
-}
 
 export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; columns: ColumnSet; teamId?: number | null }) {
   const [players, setPlayers] = useState<PlayerCardData[]>([]);
@@ -33,6 +26,7 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
   const [pitcherBonuses, setPitcherBonuses] = useState<Record<string, number> | null>(null);
   const [posType, setPosType] = useState<PosTypeFilter>("all");
   const [rules, setRules] = useState<FilterRule[]>([]);
+  const [nameQuery, setNameQuery] = useState("");
 
   useEffect(() => {
     // "all" without a team would try to ship 9000+ players in one response
@@ -75,7 +69,9 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
   const PITCHER_POS = new Set(["P", "SP", "RP", "CL"]);
 
   const filtered = useMemo(() => {
+    const q = nameQuery.trim().toLowerCase();
     return players.filter((p) => {
+      if (q && !p.name.toLowerCase().includes(q)) return false;
       const isPitcher = PITCHER_POS.has(p.pos ?? "");
       if (posType === "hitters" && isPitcher) return false;
       if (posType === "pitchers" && !isPitcher) return false;
@@ -86,7 +82,7 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
       }
       return true;
     });
-  }, [players, posType, rules, ratingSource]);
+  }, [players, posType, rules, ratingSource, nameQuery]);
 
   const sorted = useMemo(() => {
     const withVal = filtered.map((p) => {
@@ -121,6 +117,12 @@ export default function PlayerTable({ pool, columns, teamId }: { pool: Pool; col
 
   return (
     <div>
+      <input
+        value={nameQuery}
+        onChange={(e) => setNameQuery(e.target.value)}
+        placeholder="Search by name…"
+        style={{ padding: "6px 10px", fontSize: 12.5, marginBottom: 8, width: 220, border: "1px solid #e2e7f0", borderRadius: 6 }}
+      />
       <FilterBar posType={posType} onPosTypeChange={setPosType} rules={rules} onRulesChange={setRules} />
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>

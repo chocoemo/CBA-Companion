@@ -1,34 +1,43 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { classLabel } from "@/lib/classLabel";
 
 type DraftResultRow = {
   id: number;
   round: number;
   pickInRound: number | null;
   overallSlot: number;
+  overridePosition: string | null;
   team: { id: number; name: string };
-  player: { id: number; name: string; pos: string | null; age: number | null };
+  player: { id: number; name: string; pos: string | null; age: number | null; isCollege: boolean | null };
 };
 
 export default function DraftLog() {
   const [rows, setRows] = useState<DraftResultRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [nameQuery, setNameQuery] = useState("");
 
   useEffect(() => {
     fetch("/api/draft-results").then((r) => r.json()).then(setRows).finally(() => setLoading(false));
   }, []);
 
-  // Position mix by team — actual listed position, for the "who's drafting what" chart.
+  const visibleRows = rows.filter((r) => r.player.name.toLowerCase().includes(nameQuery.trim().toLowerCase()));
+
+  // Position mix by team — uses YOUR override when you've set one,
+  // otherwise the actual listed position, so this chart reflects real
+  // intentions rather than just whatever S+ has them tagged as.
   const byTeam = new Map<string, Record<string, number>>();
-  for (const r of rows) {
+  for (const r of visibleRows) {
     const key = r.team.name;
     const posCounts = byTeam.get(key) ?? {};
-    const pos = r.player.pos ?? "?";
+    const pos = r.overridePosition || r.player.pos || "?";
     posCounts[pos] = (posCounts[pos] ?? 0) + 1;
     byTeam.set(key, posCounts);
   }
-  const allPositions = Array.from(new Set(rows.map((r) => r.player.pos ?? "?"))).sort();
+  const allPositions = Array.from(
+    new Set(visibleRows.map((r) => r.overridePosition || r.player.pos || "?"))
+  ).sort();
 
   if (loading) return <p>Loading…</p>;
   if (rows.length === 0) return <p style={{ opacity: 0.7 }}>No picks logged yet — run /api/sync/draft (or the draft-watch workflow) once the draft is underway.</p>;
@@ -36,15 +45,22 @@ export default function DraftLog() {
   return (
     <div>
       <p style={{ fontSize: 12, opacity: 0.65, marginBottom: 10 }}>
-        Read-only league-wide log. To set your own picks' minor-league assignment, use "My Draft Recap" instead.
+        Read-only league-wide log. To set your own picks' minor-league assignment or position, use "My Draft Recap" instead.
       </p>
+      <input
+        value={nameQuery}
+        onChange={(e) => setNameQuery(e.target.value)}
+        placeholder="Search by name…"
+        style={{ padding: "6px 10px", fontSize: 12.5, marginBottom: 10, width: 220, border: "1px solid #e2e7f0", borderRadius: 6 }}
+      />
       <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>Picks by round</h3>
       <table className="data-table" style={{ marginBottom: 24, tableLayout: "fixed", width: "100%" }}>
         <colgroup>
-          <col style={{ width: "10%" }} />
           <col style={{ width: "9%" }} />
-          <col style={{ width: "30%" }} />
-          <col style={{ width: "30%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "27%" }} />
+          <col style={{ width: "27%" }} />
+          <col style={{ width: "8%" }} />
           <col style={{ width: "10%" }} />
           <col style={{ width: "11%" }} />
         </colgroup>
@@ -56,10 +72,11 @@ export default function DraftLog() {
             <th className="left">Player</th>
             <th>Pos</th>
             <th>Age</th>
+            <th>Class</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {visibleRows.map((r) => (
             <tr key={r.id}>
               <td>{r.round}{r.pickInRound ? `-${r.pickInRound}` : ""}</td>
               <td>{r.overallSlot}</td>
@@ -69,12 +86,16 @@ export default function DraftLog() {
                   {r.player.name}
                 </a>
               </td>
-              <td>{r.player.pos}</td>
+              <td>{r.overridePosition ? `${r.overridePosition}*` : r.player.pos}</td>
               <td>{r.player.age ?? "—"}</td>
+              <td>{classLabel(r.player.isCollege)}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      <p style={{ fontSize: 10.5, opacity: 0.55, marginTop: -14, marginBottom: 24 }}>
+        * = your own position override, set on "My Draft Recap" — not what S+ has them listed as.
+      </p>
 
       <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>Positions drafted, by team</h3>
       <table className="data-table">

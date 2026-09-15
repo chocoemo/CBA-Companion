@@ -20,6 +20,20 @@ export async function POST(req: Request) {
     const payload = await getBallparks();
     const list: any[] = Array.isArray(payload) ? payload : Array.isArray(payload?.parks) ? payload.parks : Array.isArray(payload?.teams) ? payload.teams : [];
 
+    // Diagnostic for when the guessed key names above miss — shows the
+    // actual shape so the extraction can be fixed precisely instead of
+    // guessing again.
+    if (list.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        count: 0,
+        note: "Extraction found no array under 'parks' or 'teams' — see payloadShape below to fix the real key.",
+        payloadType: Array.isArray(payload) ? "array" : typeof payload,
+        payloadKeys: payload && typeof payload === "object" ? Object.keys(payload) : null,
+        payloadSample: payload,
+      });
+    }
+
     let count = 0;
     for (const p of list) {
       const teamId = Number(p.team_id ?? p.teamId ?? p.id);

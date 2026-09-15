@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   const results = await prisma.draftResult.findMany({
     where: { ...(year ? { year } : {}), ...(teamId ? { teamId } : {}) },
     include: {
-      player: { select: { id: true, firstName: true, lastName: true, pos: true, age: true } },
+      player: { select: { id: true, firstName: true, lastName: true, pos: true, age: true, isCollege: true } },
       team: { select: { id: true, abbr: true, name: true, nickname: true } },
     },
     orderBy: [{ overallSlot: "asc" }],
@@ -25,18 +25,30 @@ export async function GET(req: Request) {
       pickInRound: r.pickInRound,
       overallSlot: r.overallSlot,
       intendedLevel: r.intendedLevel,
+      overridePosition: r.overridePosition,
       team: { id: r.team.id, name: `${r.team.name} ${r.team.nickname}` },
-      player: { id: r.player.id, name: `${r.player.firstName} ${r.player.lastName}`, pos: r.player.pos, age: r.player.age },
+      player: {
+        id: r.player.id,
+        name: `${r.player.firstName} ${r.player.lastName}`,
+        pos: r.player.pos,
+        age: r.player.age,
+        isCollege: r.player.isCollege,
+      },
     }))
   );
 }
 
-// PATCH /api/draft-results  { id, intendedLevel }
+// PATCH /api/draft-results  { id, intendedLevel?, overridePosition? }
+// Send only the field(s) you're changing.
 export async function PATCH(req: Request) {
-  const { id, intendedLevel } = await req.json();
+  const body = await req.json();
+  const data: Record<string, any> = {};
+  if ("intendedLevel" in body) data.intendedLevel = body.intendedLevel || null;
+  if ("overridePosition" in body) data.overridePosition = body.overridePosition || null;
+
   const result = await prisma.draftResult.update({
-    where: { id: Number(id) },
-    data: { intendedLevel: intendedLevel || null },
+    where: { id: Number(body.id) },
+    data,
   });
   return NextResponse.json(result);
 }

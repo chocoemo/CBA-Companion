@@ -238,6 +238,7 @@ model DraftResult {
   pickInRound   Int?
   overallSlot   Int
   intendedLevel MinorLevel? // where YOU plan to assign this pick once eligible — set manually, not synced
+  overridePosition String? // your own note on what position this player should actually play — never synced from S+, purely a personal reminder
 }
 
 // Singleton settings row (id is always 1) — fit-score tool weights and

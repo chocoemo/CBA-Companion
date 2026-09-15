@@ -6,6 +6,11 @@ import { DEFAULT_HITTER_WEIGHTS, DEFAULT_PITCHER_WEIGHTS, DEFAULT_PITCHER_BONUSE
 type League = { id: number; name: string; isCbaAffiliated: boolean };
 type Team = { id: number; name: string; nickname: string };
 
+// Explicit order, since Postgres JSONB does NOT preserve object key
+// insertion order on round-trip — relying on Object.entries() iteration
+// order silently scrambled the display order after the first save.
+const BONUS_DISPLAY_ORDER = ["EX GB", "GB", "NEU", "FB", "EX FB", "SP"];
+
 const BONUS_LABELS: Record<string, string> = {
   "EX GB": "EX GB groundball type",
   "GB": "GB groundball type",
@@ -115,11 +120,11 @@ export default function SettingsPage() {
         <h3 style={{ fontSize: 12.5, fontWeight: 800, marginTop: 16, marginBottom: 4, textTransform: "uppercase", opacity: 0.7 }}>
           Bonuses (added after the weighted average, in rating points)
         </h3>
-        {Object.entries(pitcherBonuses).map(([key, v]) => (
+        {BONUS_DISPLAY_ORDER.filter((key) => key in pitcherBonuses).map((key) => (
           <div key={key} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
             <div style={{ width: 200, fontSize: 12.5 }}>{BONUS_LABELS[key] ?? key}</div>
             <input
-              type="number" step={0.5} value={v} style={{ width: 70, fontSize: 12, padding: 3 }}
+              type="number" step={0.5} value={pitcherBonuses[key]} style={{ width: 70, fontSize: 12, padding: 3 }}
               onChange={(e) => setPitcherBonuses((s) => ({ ...s, [key]: Number(e.target.value) }))}
             />
           </div>

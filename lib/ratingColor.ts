@@ -1,12 +1,14 @@
 // Matches OOTP's own in-game scouting-screen color scale exactly (as
 // specified by the user, not approximated): 20-25 red, 30-35 orange,
-// 40-45 yellow, 50-55 green, 60-65 teal, 70+ blue. 80+ gets a distinct
-// "elite" treatment (gold) so a truly special grade still stands out even
-// within the blue band.
+// 40-45 yellow, 50-55 green, 60-65 teal, 70-80 blue. 85+ (ratings always
+// move in 5s) gets a distinct "truly elite" color that doesn't resemble
+// any of the above — a rich purple, similar to a top Perfect-Team-style
+// card tier — since the earlier gold read as washed-out/similar to the
+// 40-45 yellow band at a glance.
 export function getRatingColor(value: number | null | undefined): string {
   if (value === null || value === undefined) return "#888";
-  if (value >= 80) return "#C9A227"; // elite gold — stands out from ordinary 70+ blue
-  if (value >= 70) return "#3B82C4"; // blue
+  if (value >= 85) return "#8E24C9"; // elite purple — visually distinct from every other tier
+  if (value >= 70) return "#3B82C4"; // blue (covers 70/75/80)
   if (value >= 60) return "#2FA79B"; // teal
   if (value >= 50) return "#4CAF50"; // green
   if (value >= 40) return "#D8B23A"; // yellow
@@ -16,7 +18,7 @@ export function getRatingColor(value: number | null | undefined): string {
 
 export function getRatingBg(value: number | null | undefined): string {
   if (value === null || value === undefined) return "transparent";
-  if (value >= 80) return "#fbf3dd";
+  if (value >= 85) return "#f3e3fa";
   if (value >= 70) return "#e6f0f8";
   if (value >= 60) return "#e3f5f3";
   if (value >= 50) return "#eaf6ea";

@@ -35,7 +35,35 @@ export async function POST(req: Request) {
     await prisma.draftPoolSnapshot.create({
       data: { draftYear, remainingCount: remainingIds.length, remainingPlayerIds: remainingIds },
     });
-    results.pool = { ok: true, remaining: remainingIds.length };
+
+    // College is only known to be a confirmed column on /draftv2 — trying
+    // the same key here defensively in case /draftpool mirrors it (Big
+    // Board mostly shows undrafted pool players, who otherwise never get
+    // this set at all since they never appear in /draftv2 until picked).
+    let poolCollegeUpdates = 0;
+    const collegeKey = poolRows[0] && "College" in poolRows[0] ? "College" : null;
+    if (collegeKey) {
+      for (const row of poolRows) {
+        const playerId = Number(row["ID"]);
+        if (!playerId) continue;
+        const flag = row[collegeKey];
+        const isCollege = flag === "1" ? true : flag === "0" ? false : null;
+        if (isCollege === null) continue;
+        const existingPlayer = await prisma.player.findUnique({ where: { id: playerId } });
+        if (existingPlayer && existingPlayer.isCollege !== isCollege) {
+          await prisma.player.update({ where: { id: playerId }, data: { isCollege } });
+          poolCollegeUpdates++;
+        }
+      }
+    }
+
+    results.pool = {
+      ok: true,
+      remaining: remainingIds.length,
+      collegeColumnFound: !!collegeKey,
+      poolCollegeUpdates,
+      sampleColumns: poolRows[0] ? Object.keys(poolRows[0]) : [],
+    };
   } catch (err: any) {
     results.pool = { ok: false, error: String(err?.message ?? err) };
   }

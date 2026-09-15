@@ -1,6 +1,7 @@
 import "./globals.css";
 import { DEFAULT_THEME, themeToCssVars } from "@/lib/theme";
 import TabNav from "@/app/components/TabNav";
+import SiteSearch from "@/app/components/SiteSearch";
 
 export const metadata = {
   title: "CBA Companion",
@@ -18,6 +19,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div>
             <div style={{ fontSize: 19, fontWeight: 800 }}>CBA Companion</div>
             <div style={{ fontSize: 12, opacity: 0.85 }}>Calgary — controlling team</div>
+          </div>
+          <div style={{ marginLeft: "auto" }}>
+            <SiteSearch />
           </div>
         </header>
         <TabNav />
