@@ -7,34 +7,17 @@ type DraftResultRow = {
   round: number;
   pickInRound: number | null;
   overallSlot: number;
-  intendedLevel: string | null;
   team: { id: number; name: string };
   player: { id: number; name: string; pos: string | null; age: number | null };
 };
-
-const LEVEL_OPTIONS = ["MAJORS", "RESERVES", "DEV_A", "DEV_B", "YOUTH_ACADEMY"];
-
-// Hardcoded until the team switcher (Phase-later) exists — same convention
-// as the rest of the app (Calgary is the default/only controlling team).
-const CONTROLLING_TEAM_ID = 105;
 
 export default function DraftLog() {
   const [rows, setRows] = useState<DraftResultRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  function load() {
-    setLoading(true);
+  useEffect(() => {
     fetch("/api/draft-results").then((r) => r.json()).then(setRows).finally(() => setLoading(false));
-  }
-  useEffect(load, []);
-
-  async function setLevel(id: number, level: string) {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, intendedLevel: level || null } : r)));
-    await fetch("/api/draft-results", {
-      method: "PATCH", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, intendedLevel: level }),
-    });
-  }
+  }, []);
 
   // Position mix by team — actual listed position, for the "who's drafting what" chart.
   const byTeam = new Map<string, Record<string, number>>();
@@ -52,16 +35,18 @@ export default function DraftLog() {
 
   return (
     <div>
+      <p style={{ fontSize: 12, opacity: 0.65, marginBottom: 10 }}>
+        Read-only league-wide log. To set your own picks' minor-league assignment, use "My Draft Recap" instead.
+      </p>
       <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>Picks by round</h3>
       <table className="data-table" style={{ marginBottom: 24, tableLayout: "fixed", width: "100%" }}>
         <colgroup>
+          <col style={{ width: "10%" }} />
           <col style={{ width: "9%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "26%" }} />
-          <col style={{ width: "22%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "20%" }} />
+          <col style={{ width: "30%" }} />
+          <col style={{ width: "30%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "11%" }} />
         </colgroup>
         <thead>
           <tr>
@@ -71,7 +56,6 @@ export default function DraftLog() {
             <th className="left">Player</th>
             <th>Pos</th>
             <th>Age</th>
-            <th>Assign to</th>
           </tr>
         </thead>
         <tbody>
@@ -80,23 +64,13 @@ export default function DraftLog() {
               <td>{r.round}{r.pickInRound ? `-${r.pickInRound}` : ""}</td>
               <td>{r.overallSlot}</td>
               <td className="left">{r.team.name}</td>
-              <td className="left">{r.player.name}</td>
+              <td className="left">
+                <a href={`/players/${r.player.id}`} style={{ color: "inherit", borderBottom: "1px dotted currentColor", textDecoration: "none" }}>
+                  {r.player.name}
+                </a>
+              </td>
               <td>{r.player.pos}</td>
               <td>{r.player.age ?? "—"}</td>
-              <td onClick={(e) => e.stopPropagation()}>
-                {r.team.id === CONTROLLING_TEAM_ID ? (
-                  <select
-                    value={r.intendedLevel ?? ""}
-                    onChange={(e) => setLevel(r.id, e.target.value)}
-                    style={{ fontSize: 11.5, padding: "2px 4px", width: "100%" }}
-                  >
-                    <option value="">— not set —</option>
-                    {LEVEL_OPTIONS.map((lv) => <option key={lv} value={lv}>{lv}</option>)}
-                  </select>
-                ) : (
-                  <span style={{ opacity: 0.4, fontSize: 11.5 }}>—</span>
-                )}
-              </td>
             </tr>
           ))}
         </tbody>

@@ -25,6 +25,7 @@ enum MinorLevel {
   DEV_A      // DEV-A ~ AA
   DEV_B      // DEV-B ~ A
   YOUTH_ACADEMY // YA ~ Rookie, currently capped at age 19 per constitution 2.4.1 (subject to change)
+  INTERNATIONAL_COMPLEX // OOTP level code 8 — each org's own int'l academy (IFA signees), distinct from the "International" tab's unaffiliated foreign leagues
 }
 
 enum RatingSource {
@@ -128,6 +129,7 @@ model Player {
   draftRound        Int?
   draftOverallPick  Int?
   isCollege         Boolean? // from /draftv2's "College" column: 1=college, 0=high schooler. No school name is provided by the API.
+  height            Int?     // from the ratings export's "Height" field (cm)
   mlbServiceYears   Int?
   mlbServiceDays    Int?
   isOn40Man         Boolean  @default(false)
@@ -245,6 +247,8 @@ model Settings {
   id                Int   @id @default(1)
   fitWeights        Json  // { hitter: {...}, pitcher: {...} } — see lib/fitScore.ts for the default (Choco-confirmed) set
   pitcherBonuses    Json? // GB/FB-type + SP bonuses added to pitcher fit score — see DEFAULT_PITCHER_BONUSES
+  includeMyPark     Boolean @default(false) // scaffolding — the actual park-factor-adjusted fit score math isn't built yet
+  includedLeagueParks Json? // { [teamId]: boolean } — which teams' parks count toward a future league-adjusted Fit Score
   rosterMinC        Int?
   rosterMaxC        Int?
   rosterMinIF       Int?
@@ -314,7 +318,7 @@ model StandingsSnapshot {
   losses    Int
   ties      Int      @default(0)
   gb        Float?
-  streak    String?
+  streak    Int?     // positive = win streak of that length, negative = loss streak (StatsPlus sends a plain int, not "W3"/"L2")
   raw       Json?
 
   @@index([teamId, asOf])
@@ -342,6 +346,90 @@ model League {
   tier             LeagueTier? // best-effort name match (premier/silver/bronze) — unconfirmed until checked against real names
   raw              Json?
   updatedAt        DateTime @updatedAt
+}
+
+// From /ballparks — "OOTP park factors, capacity, stadium type, playing
+// surface" per the docs. Exact field names not confirmed against a real
+// sample yet, so `raw` is kept alongside whatever's been mapped so far —
+// this is what the (currently unbuilt) park-factor-adjusted Fit Score
+// would eventually read from.
+model Ballpark {
+  teamId       Int      @id
+  name         String?
+  capacity     Int?
+  stadiumType  String?  // open/dome/retractable, guessed field name
+  surface      String?  // grass/turf, guessed field name
+  hrFactor     Float?
+  doublesFactor Float?
+  triplesFactor Float?
+  raw          Json?
+  updatedAt    DateTime @updatedAt
+}
+
+// From /playerbatstatsv2 (split=1, overall only for now). Column names are
+// best-effort guesses at OOTP's own export naming (snake_case) — not yet
+// confirmed against a real sample. `raw` always keeps the full row
+// regardless, same pattern as everywhere else this applies.
+model PlayerSeasonBatting {
+  id       Int   @id @default(autoincrement())
+  playerId Int
+  year     Int
+  teamId   Int?
+  leagueId Int?
+  g        Int?
+  gs       Int?
+  h        Int?
+  doubles  Int?
+  triples  Int?
+  hr       Int?
+  r        Int?
+  rbi      Int?
+  sb       Int?
+  cs       Int?
+  bb       Int?
+  k        Int?
+  avg      Float?
+  obp      Float?
+  slg      Float?
+  ops      Float?
+  opsPlus  Float?
+  wrcPlus  Float?
+  wpa      Float?
+  war      Float?
+  raw      Json?
+
+  @@unique([playerId, year])
+  @@index([teamId])
+}
+
+model PlayerSeasonPitching {
+  id       Int   @id @default(autoincrement())
+  playerId Int
+  year     Int
+  teamId   Int?
+  leagueId Int?
+  g        Int?
+  gs       Int?
+  qs       Int?
+  w        Int?
+  l        Int?
+  sv       Int?
+  bs       Int?
+  r        Int?
+  er       Int?
+  era      Float?
+  whip     Float?
+  ip       Float?
+  bb       Int?
+  k        Int?
+  eraPlus  Float?
+  fipMinus Float?
+  wpa      Float?
+  war      Float?
+  raw      Json?
+
+  @@unique([playerId, year])
+  @@index([teamId])
 }
 
 
@@ -383,5 +471,91 @@ model DraftPoolSnapshot {
   asOf              DateTime @default(now())
   remainingCount    Int
   remainingPlayerIds Json    // array of player IDs still in the pool at this moment
+}
+
+// From /gamehistory — StatsPlus retains this itself (all games since the
+// league started using it), so this is a local cache for fast dashboard
+// queries more than an "or it's lost forever" archive. gameId is stable
+// per the API docs' own example, unlike PlateAppearance's row id below.
+model GameBox {
+  gameId           String   @id
+  leagueId         Int?
+  homeTeamId       Int
+  awayTeamId       Int
+  attendance       Int?
+  date             String   // "YYYY-MM-DD" as given
+  time             String?  // "HHMM" local start time
+  gameType         Int      // 0 regular, 1 exhibition, 2 spring, 3 playoffs, 4 all-star, 5/6 winter, 8 2nd all-star
+  played           Boolean  @default(true)
+  dh               Int?     // doubleheader game number, NOT designated-hitter
+  innings          Int?
+  runsAway         Int?
+  runsHome         Int?
+  hitsAway         Int?
+  hitsHome         Int?
+  errorsAway       Int?
+  errorsHome       Int?
+  winningPitcherId Int?
+  losingPitcherId  Int?
+  savePitcherId    Int?
+  starterAwayId    Int?
+  starterHomeId    Int?
+  cup              Boolean  @default(false)
+  raw              Json?
+
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+  @@index([date])
+}
+
+// From /atbats — one row per plate appearance. UNLIKE /gamehistory, this
+// is CURRENT-SEASON-ONLY at the source and gets wiped/rebuilt each import,
+// so this table is the ONLY permanent record once a season passes — this
+// is the reason /atbats gets synced on every 4x/day cycle indefinitely
+// (including through the offseason) rather than trying to time one final
+// "catch it before it's gone" pull. The source row `id` is explicitly
+// documented as unstable across imports, so it is NOT used as a key here —
+// dedup instead uses the natural combination of game/player/situation,
+// via createMany+skipDuplicates so re-syncing the same (growing) CSV never
+// creates duplicate rows.
+model PlateAppearance {
+  id          Int      @id @default(autoincrement())
+  gameId      String
+  playerId    Int      // the batter
+  pitcherId   Int
+  teamId      Int      // the batter's team
+  leagueId    Int?
+  date        String
+  time        String?
+  gameType    Int
+  homeTeam    Int?     // team_id of the home team in that game
+  inning      Int
+  outs        Int      // outs BEFORE this plate appearance
+  spot        Int?     // batting order spot, 1-9
+  balls       Int?
+  strikes     Int?
+  result      Int      // see result-value table in lib/statsplus.ts comments
+  sac         Boolean  @default(false)
+  pinch       Boolean  @default(false)
+  base1       Boolean  @default(false)
+  base2       Boolean  @default(false)
+  base3       Boolean  @default(false)
+  close       Boolean  @default(false)
+  runDiff     Int?
+  rbi         Int?
+  r           Int?
+  sb          Int?
+  cs          Int?
+  hitLoc      String?
+  hitXy       String?
+  exitVelo    Float?
+  launchAngle Float?
+  sprintSpeed Float?
+
+  @@unique([gameId, playerId, pitcherId, inning, outs, spot])
+  @@index([playerId])
+  @@index([pitcherId])
+  @@index([teamId])
+  @@index([gameId])
 }
 

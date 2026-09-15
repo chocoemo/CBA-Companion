@@ -3,6 +3,7 @@ import SubTabNav from "@/app/components/SubTabNav";
 const TABS = [
   { href: "/draft", label: "Big Board" },
   { href: "/draft/log", label: "Draft Log" },
+  { href: "/draft/recap", label: "My Draft Recap" },
   { href: "/draft/power-speed", label: "Power/Speed" },
 ];
 

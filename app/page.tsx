@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
+import { formatStreak } from "@/lib/formatStreak";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export default async function TeamDashboardPage() {
           <div style={{ display: "flex", gap: 26 }}>
             <Stat label="Record" value={`${latestStanding.wins}-${latestStanding.losses}`} />
             <Stat label="GB" value={latestStanding.gb?.toString() ?? "—"} />
-            <Stat label="Streak" value={latestStanding.streak ?? "—"} />
+            <Stat label="Streak" value={formatStreak(latestStanding.streak)} />
           </div>
         )}
       </section>

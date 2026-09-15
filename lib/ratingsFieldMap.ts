@@ -47,6 +47,23 @@ export const PITCH_FIELD_MAP: Record<string, { current: string; potential?: stri
 // logic (see lib/positionFit.ts).
 export const POSITION_RATING_KEYS = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "P"] as const;
 
+// Per-hand splits (vs LHP/RHP for hitters, vs LHB/RHB for pitchers) —
+// these exist as _L/_R suffixed raw columns. No potential value exists
+// per-split, only for the overall (non-split) tool.
+export const SPLIT_FIELD_MAP: Record<string, { l: string; r: string }> = {
+  contact: { l: "Cntct_L", r: "Cntct_R" },
+  eye: { l: "Eye_L", r: "Eye_R" },
+  gap: { l: "Gap_L", r: "Gap_R" },
+  power: { l: "Pow_L", r: "Pow_R" },
+  babip: { l: "BABIP_L", r: "BABIP_R" },
+  avoidK: { l: "Ks_L", r: "Ks_R" },
+  hrRate: { l: "HRA_L", r: "HRA_R" },
+  pbabip: { l: "PBABIP_L", r: "PBABIP_R" },
+  stuff: { l: "Stf_L", r: "Stf_R" },
+  control: { l: "Ctrl_L", r: "Ctrl_R" },
+  movement: { l: "Mov_L", r: "Mov_R" },
+};
+
 // Fielding sub-tools (range/error/arm/double-play). NONE of these have a
 // separate potential field in the API's export — only the per-position
 // overall suitability above (C/1B/2B/... + Pot-prefixed) projects a
@@ -75,7 +92,7 @@ export const MAKEUP_FIELD_MAP: Record<string, string> = {
   workEthic: "WrkEthic",
   injuryProne: "Prone",
   leadership: "Lead",
-  adaptability: "Acc",
+  scoutAccuracy: "Acc", // was mislabeled "adaptability" — Acc is scout report accuracy (VH/H/A/L/VL), not a player skill
 };
 
 export function buildToolsObject(row: Record<string, string>): Record<string, number | string | null> {
@@ -107,6 +124,28 @@ export function buildToolsObject(row: Record<string, string>): Record<string, nu
   }
   out.positionRatings = positions as any;
   out.positionRatingsPot = positionsPot as any;
+
+  // Per-hand splits, nested under each tool's own object rather than
+  // flattened, so the profile page can render "base / vs L / vs R" cleanly.
+  const splits: Record<string, { l: number | null; r: number | null }> = {};
+  for (const [label, keys] of Object.entries(SPLIT_FIELD_MAP)) {
+    splits[label] = { l: num(row[keys.l]), r: num(row[keys.r]) };
+  }
+  out.splits = splits as any;
+
+  out.height = num(row["Height"]); // cm
+
+  out.sacBunt = num(row["SacBunt"]);
+  out.buntForHit = num(row["BuntHit"]);
+  out.baserunning = num(row["Run"]); // distinct from "Speed" (running speed) — this is baserunning instincts/routes
+  out.stealingAggressiveness = num(row["StlRt"]); // distinct from "Steal" (stealing ability/success rate)
+
+  // Batted-ball tendency codes exist in the raw export (GBType/FBType) but
+  // the numeric-code-to-label mapping ("Normal"/"Pull Hitter"/etc, as seen
+  // in-game) isn't confirmed — surfacing the raw codes rather than
+  // guessing a wrong lookup table.
+  out.gbTypeCodeRaw = row["GBType"] ?? null;
+  out.fbTypeCodeRaw = row["FBType"] ?? null;
 
   out.velocity = row["Vel"] ?? null; // e.g. "96-98", kept as a string range
   out.velocityPot = row["PotVel"] ?? null;

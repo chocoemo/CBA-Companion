@@ -3,13 +3,14 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/draft-results?year=YYYY
+// GET /api/draft-results?year=YYYY&teamId=105
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const year = searchParams.get("year") ? Number(searchParams.get("year")) : undefined;
+  const teamId = searchParams.get("teamId") ? Number(searchParams.get("teamId")) : undefined;
 
   const results = await prisma.draftResult.findMany({
-    where: year ? { year } : {},
+    where: { ...(year ? { year } : {}), ...(teamId ? { teamId } : {}) },
     include: {
       player: { select: { id: true, firstName: true, lastName: true, pos: true, age: true } },
       team: { select: { id: true, abbr: true, name: true, nickname: true } },

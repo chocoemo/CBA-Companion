@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { formatStreak } from "@/lib/formatStreak";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ export default async function StandingsPage() {
             <td>{r.losses}</td>
             <td>{(r.wins / Math.max(1, r.wins + r.losses)).toFixed(3).replace(/^0/, "")}</td>
             <td>{r.gb ?? "—"}</td>
-            <td>{r.streak ?? "—"}</td>
+            <td>{formatStreak(r.streak)}</td>
           </tr>
         ))}
       </tbody>

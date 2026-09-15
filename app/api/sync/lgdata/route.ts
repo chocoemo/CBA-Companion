@@ -108,7 +108,7 @@ export async function POST(req: Request) {
           losses: Number(s.l ?? 0),
           ties: Number(s.t ?? 0),
           gb: s.gb !== undefined && s.gb !== null ? Number(s.gb) : null,
-          streak: s.streak ?? null,
+          streak: s.streak !== undefined && s.streak !== null ? Number(s.streak) : null,
           raw: s,
         },
       });

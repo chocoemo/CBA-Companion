@@ -40,6 +40,7 @@ export const MINOR_LEVEL_FROM_OOTP: Record<number, string> = {
   3: "DEV_A",          // AA-equivalent
   4: "DEV_B",          // A-equivalent
   6: "YOUTH_ACADEMY",  // Rookie-equivalent
+  8: "INTERNATIONAL_COMPLEX", // each org's own int'l academy — was unmapped, so these players fell through with level=null
 };
 
 // ---- Low-level fetch helpers ----
@@ -241,6 +242,43 @@ export async function getDraftV2() {
   return parseCsv(text);
 }
 
+// Requires login/token; rate-limited to once per 5 min per team. Returns
+// ALL games since the league started using StatsPlus — genuinely
+// historical already, unlike /atbats below.
+export async function getGameHistory() {
+  const { text, status } = await fetchChecked(withToken("/gamehistory/"));
+  if (status === 204 || !text) return [];
+  return parseCsv(text);
+}
+
+// Token required, rate-limited to once per 60s per team. NO tid/pid/etc
+// filters passed here on purpose — whole-league scope, per design. This is
+// CURRENT-SEASON-ONLY at the source (StatsPlus rebuilds it from scratch
+// each import and does not retain history) — see the PlateAppearance model
+// comment for why this gets synced indefinitely rather than "just once
+// before the season ends."
+export async function getAtBats() {
+  const { text, status } = await fetchChecked(withToken("/atbats/"));
+  if (status === 204 || !text) return [];
+  return parseCsv(text);
+}
+
+// Token required. Format mirrors OOTP's own career batting/pitching stats
+// tables (varies slightly by OOTP version) — "up to four... stat split
+// lines" per player (split_id: 1=overall, 2=vsL, 3=vsR). No pid passed
+// here on purpose (whole-league scope, same convention as /atbats).
+export async function getPlayerBatStats(year: number) {
+  const { text, status } = await fetchChecked(withToken("/playerbatstatsv2/", { year, split: 1 }));
+  if (status === 204 || !text) return [];
+  return parseCsv(text);
+}
+
+export async function getPlayerPitchStats(year: number) {
+  const { text, status } = await fetchChecked(withToken("/playerpitchstatsv2/", { year, split: 1 }));
+  if (status === 204 || !text) return [];
+  return parseCsv(text);
+}
+
 export async function getTradeBlock(): Promise<number[]> {
   const { text, status } = await fetchChecked(withToken("/tradeblock/"));
   if (status === 204 || !text) return [];
@@ -248,6 +286,10 @@ export async function getTradeBlock(): Promise<number[]> {
   return json.player_ids ?? [];
 }
 
+// Token required, JSON response: "park factors, capacity, stadium type
+// (open/dome/etc), playing surface" per the docs. Exact field names not
+// confirmed against a real sample yet — see the sync route's defensive
+// parsing and its note about that.
 export async function getBallparks(lid?: number) {
   const { text, status } = await fetchChecked(withToken("/ballparks/", { lid }));
   if (status === 204 || !text) return null;

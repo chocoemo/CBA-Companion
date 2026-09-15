@@ -56,6 +56,11 @@ export async function POST(req: Request) {
     const player = await prisma.player.findUnique({ where: { id: playerId } });
     if (!player) { skippedNoPlayer++; continue; } // sync /players first so ratings always join to a known player
 
+    const tools = buildToolsObject(row);
+    if (typeof tools.height === "number" && player.height !== tools.height) {
+      await prisma.player.update({ where: { id: playerId }, data: { height: tools.height as number } });
+    }
+
     await prisma.ratingSnapshot.create({
       data: {
         playerId,
@@ -63,7 +68,7 @@ export async function POST(req: Request) {
         capturedAt,
         overall: num(row["Ovr"]),
         potential: num(row["Pot"]),
-        tools: buildToolsObject(row),
+        tools,
         raw: row,
       },
     });
